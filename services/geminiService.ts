@@ -5,7 +5,8 @@ export const isApiKeyReady = () => {
   return !!process.env.API_KEY && process.env.API_KEY.length > 10;
 };
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Use fallback to avoid TS2322: Type 'string | undefined' is not assignable to type 'string'
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
 
 let audioCtx: AudioContext | null = null;
 
@@ -19,7 +20,7 @@ function decodeBase64(base64: string) {
 }
 
 /**
- * ถอดรหัส PCM 16-bit Little Endian จาก AI ให้เป็น AudioBuffer
+ * Robust PCM 16-bit Little Endian decoder using DataView for cross-device compatibility.
  */
 async function decodePcmAudio(
   data: Uint8Array,
@@ -27,8 +28,7 @@ async function decodePcmAudio(
   sampleRate: number,
   numChannels: number,
 ): Promise<AudioBuffer> {
-  // 16-bit = 2 bytes ต่อ 1 sample
-  // ตรวจสอบว่าจำนวน byte หาร 2 ลงตัว เพื่อป้องกันข้อมูลพัง
+  // 16-bit = 2 bytes per sample. Ensure we don't read past the end if data is misaligned.
   const validByteLength = data.byteLength - (data.byteLength % (2 * numChannels));
   const frameCount = validByteLength / (2 * numChannels);
   
@@ -38,11 +38,11 @@ async function decodePcmAudio(
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
     for (let i = 0; i < frameCount; i++) {
-      // อ่านค่า 16-bit Signed Integer แบบ Little Endian (true)
-      // Gemini AI ส่งเสียงมาเป็น Little Endian เสมอ
+      // Offset: (sample index * channels + current channel) * bytes per sample (2)
       const byteOffset = (i * numChannels + channel) * 2;
+      // Gemini TTS PCM is Little Endian (true)
       const sample = view.getInt16(byteOffset, true);
-      // แปลงช่วงค่า -32768 ถึง 32767 เป็น -1.0 ถึง 1.0
+      // Normalize Int16 (-32768 to 32767) to Float32 (-1.0 to 1.0)
       channelData[i] = sample / 32768.0;
     }
   }
@@ -206,7 +206,12 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
   if (!text.trim()) return { ok: true };
   const ctx = await initAudio();
   try {
-    const voiceMap = { 'GRANDMA': 'Kore', 'GIRLFRIEND': 'Puck', 'BOYFRIEND': 'Charon', 'PROFESSIONAL': 'Zephyr' };
+    const voiceMap: Record<AiPersona, string> = { 
+      'GRANDMA': 'Kore', 
+      'GIRLFRIEND': 'Puck', 
+      'BOYFRIEND': 'Charon', 
+      'PROFESSIONAL': 'Zephyr' 
+    };
     const voiceName = voiceMap[persona] || 'Kore';
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
@@ -221,14 +226,12 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
       const part = response.candidates[0].content.parts.find(p => p.inlineData?.data);
       if (part?.inlineData?.data) {
         const bytes = decodeBase64(part.inlineData.data);
-        // ถอดรหัสด้วย PCM Decoder ตัวใหม่ที่เสถียรกว่าเดิม
         const audioBuffer = await decodePcmAudio(bytes, ctx, 24000, 1);
         
         const source = ctx.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(ctx.destination);
         
-        // บังคับ Resume อีกครั้งก่อนเล่นเพื่อความชัวร์บน iOS
         if (ctx.state === 'suspended') await ctx.resume();
         source.start(0);
         return { ok: true };
