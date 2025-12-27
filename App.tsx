@@ -7,7 +7,8 @@ import HistoryList from './components/HistoryList';
 import POSSystem from './components/POSSystem';
 import ProductManager from './components/ProductManager';
 import SyncManager from './components/SyncManager';
-import { processReceiptImage, speakText, generateMascot, initAudio, openKeySelector, hasCustomKey } from './services/geminiService';
+// Remove non-existent generateMascot import from geminiService
+import { processReceiptImage, speakText, initAudio, openKeySelector, hasCustomKey } from './services/geminiService';
 import { LayoutDashboard, History, Camera, Loader2, Store, Package, Power, Coffee, Zap, Cloud, ShieldAlert, Sparkles, Check, X, Plus, Minus, Info, Trash2, Tag, Edit3, Coins, Eye, RotateCw, Key, Shield } from 'lucide-react';
 import { isSameDay, isSameWeek, isSameMonth, isSameYear } from 'date-fns';
 

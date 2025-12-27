@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Save, X, Loader2, ArrowLeft, CheckSquare, Square, Image as ImageIcon, Plus, Trash2, Package, Tag, Wallet, Zap } from 'lucide-react';
+import { Camera, Save, X, Loader2, ArrowLeft, CheckSquare, Square, Image as ImageIcon, Plus, Trash2, Package, Tag, Wallet, Zap, ListFilter } from 'lucide-react';
 import { recognizeProduct, speakText } from '../services/geminiService';
 import { PosProduct, AiPersona } from '../types';
 
@@ -13,12 +13,11 @@ interface ProductManagerProps {
   persona?: AiPersona;
 }
 
-// @google/genai fix: Added type assertion to persona default value to ensure it's treated as AiPersona union type
 const ProductManager: React.FC<ProductManagerProps> = ({ products, onSave, onDelete, onBack, prefillData, persona = 'GRANDMA' as AiPersona }) => {
   const [view, setView] = useState<'list' | 'add'>('list');
   const [isCapturingProduct, setIsCapturingProduct] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isQuickSelect, setIsQuickSelect] = useState(false);
+  const [isRetailProduct, setIsRetailProduct] = useState(false);
   
   const [productName, setProductName] = useState('');
   const [costPrice, setCostPrice] = useState('');
@@ -32,7 +31,7 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onSave, onDel
     if (prefillData) {
       setProductName(prefillData.name);
       setView('add');
-      speakText("มีของมาใหม่เหรอ ช่วยใส่ราคาหน่อยสิ", persona);
+      speakText("ยายจ๋า มีของมาใหม่เหรอ ใส่ราคาให้หน่อยนะ", persona);
     }
   }, [prefillData]);
 
@@ -42,7 +41,7 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onSave, onDel
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
           if (videoRef.current) videoRef.current.srcObject = stream;
-        } catch (err) { alert("เปิดกล้องไม่ได้เลย"); setIsCapturingProduct(false); }
+        } catch (err) { alert("เปิดกล้องไม่ได้เลยจ้ะ"); setIsCapturingProduct(false); }
       })();
     } else {
       if (videoRef.current?.srcObject) (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
@@ -50,44 +49,37 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onSave, onDel
   }, [isCapturingProduct]);
 
   const handleSave = () => {
-    if (!productName || !sellingPrice) { speakText("ใส่ชื่อกับราคาให้ก่อนสิลูก", persona); return; }
+    if (!productName || !sellingPrice) { speakText("ใส่ชื่อกับราคาให้ครบก่อนนะจ๊ะ", persona); return; }
     onSave({
       id: crypto.randomUUID(),
       name: productName,
       barcode: '',
       costPrice: parseFloat(costPrice) || 0,
       price: parseFloat(sellingPrice) || 0,
-      isQuickSelect: isQuickSelect,
+      isRetailProduct: isRetailProduct,
       imageUrl: productImageUrl || undefined
     });
-    setProductName(''); setCostPrice(''); setSellingPrice(''); setProductImageUrl(null); setIsQuickSelect(false);
-    speakText("บันทึกของใหม่เรียบร้อยแล้ว", persona);
+    setProductName(''); setCostPrice(''); setSellingPrice(''); setProductImageUrl(null); setIsRetailProduct(false);
+    speakText("จดลงสมุดให้เรียบร้อยแล้วจ้ะยาย", persona);
     setView('list');
   };
 
   const handleCaptureAndRecognize = async () => {
     if (!videoRef.current || !canvasRef.current) return;
     setIsProcessing(true);
-    
     const canvas = canvasRef.current;
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.drawImage(videoRef.current, 0, 0);
-    
+    canvas.width = videoRef.current.videoWidth; canvas.height = videoRef.current.videoHeight;
+    canvas.getContext('2d')!.drawImage(videoRef.current, 0, 0);
     const base64 = canvas.toDataURL('image/jpeg', 0.8);
     setProductImageUrl(base64);
-
     try {
       const res = await recognizeProduct(base64.split(',')[1]);
       setProductName(res.name);
-      speakText(`ของชิ้นนี้ชื่อ ${res.name} ใช่ไหม?`, persona);
+      speakText(`อ่านชื่อได้ว่า ${res.name} จ้ะ`, persona);
     } catch(e) {
-      speakText("มองไม่เห็นชื่อเลย พิมพ์ให้หน่อยนะ", persona);
+      speakText("ยายจ๋า อ่านไม่ออกเลย พิมพ์เองนะจ๊ะ", persona);
     } finally {
-      setIsProcessing(false);
-      setIsCapturingProduct(false);
+      setIsProcessing(false); setIsCapturingProduct(false);
     }
   };
 
@@ -95,152 +87,92 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onSave, onDel
     return (
       <div className="space-y-6 pb-24">
         <div className="flex justify-between items-center px-2">
-          <h2 className="text-2xl font-black text-gray-800 tracking-tight">สมุดจดของ ({products.length})</h2>
-          <button onClick={() => setView('add')} className="bg-blue-600 text-white p-4 rounded-2xl flex items-center gap-2 font-black shadow-lg active:scale-95 transition-all"><Plus size={24}/> เพิ่มของใหม่</button>
+          <h2 className="text-2xl font-black text-gray-800">สมุดจดของยาย</h2>
+          <button onClick={() => setView('add')} className="bg-blue-600 text-white p-4 rounded-2xl flex items-center gap-2 font-black shadow-lg"><Plus size={24}/> เพิ่มของใหม่</button>
         </div>
 
-        {products.length === 0 ? (
-          <div className="bg-white p-16 rounded-[40px] border-2 border-dashed border-gray-200 text-center text-gray-400">
-             <Package className="mx-auto w-20 h-20 mb-6 opacity-10" />
-             <p className="font-black text-xl">ยังไม่มีของในสมุดเลย</p>
-             <p className="text-sm">มาช่วยกันเพิ่มของกันหน่อยนะ</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {products.map(p => (
-              <div key={p.id} className="bg-white p-5 rounded-[32px] border border-gray-100 flex items-center gap-5 shadow-sm relative overflow-hidden group">
-                {p.isQuickSelect && (
-                  <div className="absolute top-0 right-10 bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-b-xl shadow-sm flex items-center gap-1">
-                    <Zap size={10} fill="white" /> ขายบ่อย
+        <div className="grid grid-cols-1 gap-4">
+          {products.length === 0 ? (
+            <div className="bg-white p-16 rounded-[40px] text-center text-gray-400 font-bold border-2 border-dashed border-gray-100">ยังไม่มีของในสมุดจ้ะยาย</div>
+          ) : (
+            products.map(p => (
+              <div key={p.id} className="bg-white p-5 rounded-[32px] border border-gray-100 flex items-center gap-5 shadow-sm relative overflow-hidden">
+                {p.isRetailProduct && (
+                  <div className="absolute top-0 right-10 bg-orange-500 text-white text-[9px] font-black px-3 py-1 rounded-b-xl flex items-center gap-1 uppercase tracking-widest">
+                    <ListFilter size={10} /> ขายย่อย
                   </div>
                 )}
-                <div className="w-20 h-20 bg-gray-50 rounded-[24px] shrink-0 overflow-hidden border border-gray-100">
-                  {p.imageUrl ? <img src={p.imageUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] font-black text-gray-300">ไม่มีรูป</div>}
+                <div className="w-16 h-16 bg-gray-100 rounded-2xl overflow-hidden border border-gray-50 flex items-center justify-center">
+                  {p.imageUrl ? <img src={p.imageUrl} className="w-full h-full object-cover" /> : <Package className="text-gray-300" />}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-black text-gray-800 text-lg truncate leading-tight">{p.name}</p>
-                  <div className="flex gap-4 items-center mt-1">
-                    <p className="text-orange-500 font-black text-sm">ทุน: ฿{p.costPrice}</p>
-                    <p className="text-blue-600 font-black text-lg">ขาย: ฿{p.price}</p>
-                  </div>
+                <div className="flex-1">
+                  <p className="font-black text-gray-800 truncate">{p.name}</p>
+                  <p className="text-blue-600 font-black">฿{p.price}</p>
                 </div>
-                <button onClick={() => { if(confirm('จะลบจริงเหรอ?')) onDelete(p.id); }} className="p-4 text-red-200 hover:text-red-500 transition-colors active:scale-90"><Trash2 size={24}/></button>
+                <button onClick={() => onDelete(p.id)} className="p-4 text-red-200"><Trash2 size={24}/></button>
               </div>
-            ))}
-          </div>
-        )}
+            ))
+          )}
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6 pb-20">
-      <button onClick={() => setView('list')} className="flex items-center gap-2 text-gray-500 font-black p-2"><ArrowLeft size={20}/> กลับไปดูสมุด</button>
-      
-      <div className="bg-white p-8 rounded-[50px] shadow-2xl border border-gray-100 space-y-8 animate-in slide-in-from-bottom duration-500">
-        <h3 className="text-2xl font-black text-center text-gray-800 uppercase tracking-tight">ช่วยเพิ่มของหน่อย</h3>
+      <button onClick={() => setView('list')} className="flex items-center gap-2 text-gray-500 font-black"><ArrowLeft size={20}/> กลับสมุด</button>
+      <div className="bg-white p-8 rounded-[50px] shadow-2xl space-y-8 animate-in slide-in-from-bottom duration-500">
+        <h3 className="text-2xl font-black text-center text-gray-800">ช่วยจดของใหม่หน่อยจ้ะ</h3>
         
         <div className="flex justify-center">
           {productImageUrl ? (
-            <div className="relative group">
-              <img src={productImageUrl} className="w-56 h-56 rounded-[50px] object-cover border-8 border-blue-50 shadow-2xl transition-all group-hover:scale-105" />
-              <button onClick={() => setProductImageUrl(null)} className="absolute -top-3 -right-3 bg-red-500 text-white p-3 rounded-full shadow-xl border-4 border-white active:scale-90"><X size={24}/></button>
-            </div>
+            <div className="relative"><img src={productImageUrl} className="w-48 h-48 rounded-[50px] object-cover border-4 border-blue-50 shadow-xl" /><button onClick={() => setProductImageUrl(null)} className="absolute -top-2 -right-2 bg-red-500 text-white p-2 rounded-full shadow-lg"><X size={20}/></button></div>
           ) : (
-            <button 
-              onClick={() => setIsCapturingProduct(true)} 
-              className="w-56 h-56 rounded-[50px] bg-gray-50 border-4 border-dashed border-gray-200 flex flex-col items-center justify-center gap-4 text-gray-400 hover:bg-gray-100 hover:border-blue-200 transition-all group"
-            >
-              <div className="bg-white p-6 rounded-full shadow-sm group-hover:scale-110 transition-transform">
-                <ImageIcon size={64} className="text-blue-200" />
-              </div>
-              <span className="text-xs font-black uppercase tracking-[0.2em]">ถ่ายรูปให้ดูหน่อย</span>
+            <button onClick={() => setIsCapturingProduct(true)} className="w-48 h-48 rounded-[50px] bg-gray-50 border-4 border-dashed border-gray-200 flex flex-col items-center justify-center gap-2 text-gray-300">
+              <ImageIcon size={48} />
+              <span className="text-[10px] font-black uppercase">ถ่ายรูปของจ้ะ</span>
             </button>
           )}
         </div>
         
         <button 
-          onClick={() => setIsQuickSelect(!isQuickSelect)} 
-          className={`w-full flex items-center justify-between p-8 rounded-[35px] border-4 transition-all ${isQuickSelect ? 'bg-orange-50 border-orange-500 text-orange-700 shadow-lg' : 'bg-gray-50 border-transparent text-gray-500 hover:bg-gray-100'}`}
+          onClick={() => setIsRetailProduct(!isRetailProduct)} 
+          className={`w-full flex items-center justify-between p-6 rounded-[35px] border-4 transition-all ${isRetailProduct ? 'bg-orange-50 border-orange-500 text-orange-700 shadow-lg' : 'bg-gray-50 border-transparent text-gray-500'}`}
         >
           <div className="flex items-center gap-4">
-            {isQuickSelect ? <CheckSquare size={36} strokeWidth={3} /> : <Square size={36} strokeWidth={3} />}
+            {isRetailProduct ? <CheckSquare size={32} /> : <Square size={32} />}
             <div className="text-left">
-              <p className="text-2xl font-black">ของที่ขายบ่อย</p>
-              <p className="text-xs opacity-70 font-bold">จะแยกเอาไว้กดง่ายๆ นะ</p>
+              <p className="text-xl font-black">สินค้าขายย่อย</p>
+              <p className="text-[10px] font-bold opacity-70">ซ่อนไว้เลือกเองในหน้าขายของจ้ะ</p>
             </div>
           </div>
-          {isQuickSelect && <Zap size={32} fill="currentColor" className="animate-bounce" />}
+          <ListFilter className={isRetailProduct ? 'animate-bounce' : ''} />
         </button>
         
         <div className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-6">ชื่อสินค้า</label>
-            <input 
-              value={productName} 
-              onChange={e => setProductName(e.target.value)} 
-              className="w-full bg-gray-50 p-8 rounded-[30px] text-2xl font-black border-4 border-transparent focus:border-blue-500 outline-none shadow-inner" 
-              placeholder="ของชื่ออะไร..." 
-            />
-          </div>
-          
-          <div className="grid grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-orange-500 uppercase tracking-widest ml-6 flex items-center gap-2"><Wallet size={14}/> ซื้อมาเท่าไหร่</label>
-              <input 
-                type="number" 
-                value={costPrice} 
-                onChange={e => setCostPrice(e.target.value)} 
-                className="w-full bg-orange-50/50 p-8 rounded-[30px] text-4xl font-black text-center outline-none border-4 border-transparent focus:border-orange-500 text-orange-600 shadow-inner" 
-                placeholder="0" 
-              />
+          <input value={productName} onChange={e => setProductName(e.target.value)} className="w-full bg-gray-50 p-6 rounded-[30px] text-xl font-black border-2 border-transparent focus:border-blue-500 outline-none" placeholder="ของชื่ออะไรจ๊ะ..." />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-[10px] font-black text-orange-400 uppercase ml-4">ทุนยาย</label>
+              <input type="number" value={costPrice} onChange={e => setCostPrice(e.target.value)} className="w-full bg-gray-50 p-6 rounded-[30px] text-2xl font-black text-center" placeholder="0" />
             </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-blue-500 uppercase tracking-widest ml-6 flex items-center gap-2"><Tag size={14}/> จะขายกี่บาท</label>
-              <input 
-                type="number" 
-                value={sellingPrice} 
-                onChange={e => setSellingPrice(e.target.value)} 
-                className="w-full bg-blue-50/50 p-8 rounded-[30px] text-4xl font-black text-center outline-none border-4 border-transparent focus:border-blue-500 text-blue-600 shadow-inner" 
-                placeholder="0" 
-              />
+            <div>
+              <label className="text-[10px] font-black text-blue-400 uppercase ml-4">ราคาขาย</label>
+              <input type="number" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} className="w-full bg-gray-50 p-6 rounded-[30px] text-2xl font-black text-center" placeholder="0" />
             </div>
           </div>
         </div>
         
-        <button onClick={handleSave} className="w-full bg-blue-600 text-white py-8 rounded-[40px] font-black text-3xl shadow-[0_20px_40px_rgba(37,99,235,0.3)] active:scale-95 transition-all hover:bg-blue-700">
-          จดลงสมุดเลย
-        </button>
+        <button onClick={handleSave} className="w-full bg-blue-600 text-white py-8 rounded-[40px] font-black text-2xl shadow-xl active:scale-95 transition-all">จดลงสมุดจ้ะ</button>
       </div>
 
       {isCapturingProduct && (
         <div className="fixed inset-0 z-[1200] bg-black flex flex-col">
-          <div className="p-8 flex justify-between items-center absolute top-0 left-0 right-0 z-[1230] text-white bg-gradient-to-b from-black/80 to-transparent">
-            <button onClick={() => setIsCapturingProduct(false)} className="p-4 bg-white/20 rounded-full backdrop-blur-md"><X size={32}/></button>
-            <p className="font-black text-xl">มองของไม่ชัดเลย</p>
-            <div className="w-14"></div>
-          </div>
-          
-          <div className="flex-1 relative bg-gray-950 flex items-center justify-center overflow-hidden">
-            <video ref={videoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
-            <div className="absolute inset-0 flex items-center justify-center p-12 pointer-events-none mb-20">
-               <div className="w-full aspect-square border-4 border-white/30 border-dashed rounded-[60px] shadow-[0_0_0_1000px_rgba(0,0,0,0.6)]"></div>
-            </div>
-            <div className="absolute bottom-20 left-0 right-0 flex justify-center z-[1240]">
-              {isProcessing ? (
-                <div className="bg-white/95 backdrop-blur-xl px-12 py-6 rounded-full flex items-center gap-5 shadow-2xl border-4 border-blue-500">
-                  <Loader2 className="animate-spin text-blue-600 w-10 h-10" />
-                  <p className="font-black text-blue-600 text-2xl">กำลังเพ่งอยู่นะ...</p>
-                </div>
-              ) : (
-                <button 
-                  onClick={handleCaptureAndRecognize} 
-                  className="w-32 h-32 bg-white rounded-full flex items-center justify-center border-[14px] border-gray-200 shadow-[0_0_60px_rgba(255,255,255,0.4)] active:scale-90 transition-all"
-                >
-                  <Camera size={64} className="text-blue-600" />
-                </button>
-              )}
-            </div>
+          <div className="p-8 absolute top-0 left-0 right-0 z-[1230] text-white flex justify-between"><button onClick={() => setIsCapturingProduct(false)} className="bg-white/20 p-4 rounded-full"><X/></button></div>
+          <video ref={videoRef} autoPlay playsInline className="flex-1 object-cover" />
+          <div className="p-12 flex justify-center bg-black">
+            {isProcessing ? <Loader2 className="animate-spin text-white w-12 h-12" /> : 
+            <button onClick={handleCaptureAndRecognize} className="w-24 h-24 bg-white rounded-full border-[10px] border-gray-100 flex items-center justify-center shadow-xl"><Camera size={48} className="text-blue-600" /></button>}
           </div>
           <canvas ref={canvasRef} className="hidden" />
         </div>

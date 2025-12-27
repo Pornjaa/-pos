@@ -2,13 +2,15 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Category, AiPersona } from "../types";
 
-// ฟังก์ชันตรวจสอบคีย์ API
+const getApiKey = () => {
+  return process.env.API_KEY || "";
+};
+
 export const isApiKeyReady = () => {
-  const key = process.env.API_KEY;
+  const key = getApiKey();
   return typeof key === 'string' && key.length > 10;
 };
 
-// เช็คว่ามีการเลือก API Key ผ่าน AI Studio หรือยัง
 export const hasCustomKey = async () => {
   if (typeof (window as any).aistudio?.hasSelectedApiKey === 'function') {
     return await (window as any).aistudio.hasSelectedApiKey();
@@ -16,7 +18,6 @@ export const hasCustomKey = async () => {
   return false;
 };
 
-// เปิดหน้าต่างเลือก API Key
 export const openKeySelector = async () => {
   if (typeof (window as any).aistudio?.openSelectKey === 'function') {
     await (window as any).aistudio.openSelectKey();
@@ -87,32 +88,29 @@ export const playTestBeep = async () => {
 export const testAiConnection = async () => {
   if (!isApiKeyReady()) return { ok: false, msg: "ไม่พบกุญแจ API ในระบบจ้ะ" };
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: getApiKey() });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: "ตอบคำว่า OK",
     });
     return { ok: !!response.text, msg: "เชื่อมต่อ AI สำเร็จแล้วจ้ะ!" };
   } catch (e: any) {
-    let errorMsg = "กุญแจอาจจะผิดหรือหมดอายุจ้ะ";
-    if (e.message?.includes("429")) errorMsg = "โควต้าการใช้งานวันนี้หมดแล้วจ้ะ (จำกัด 20 ครั้ง/วัน)";
-    return { ok: false, msg: errorMsg };
+    console.error("Connection Test Error:", e);
+    return { ok: false, msg: "กุญแจอาจจะผิดหรือหมดอายุจ้ะ" };
   }
 };
 
 export const processReceiptImage = async (base64Image: string) => {
+  if (!isApiKeyReady()) throw new Error("MISSING_KEY");
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: getApiKey() });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       config: {
-        systemInstruction: `คุณคือผู้เชี่ยวชาญการอ่านบิลส่งของในร้านค้าไทย หน้าที่คือสกัดข้อมูลบิลให้คุณยายเจ้าของร้าน
-        คำสั่งสำคัญ:
-        1. พยายามสแกนหาตัวเลข "ยอดรวมสุทธิ" หรือ "Total" ในบิลให้เจอ
-        2. สกัดรายการสินค้าทุกอย่าง (ชื่อ, จำนวน, ราคารวมรายการ)
-        3. หากอ่านรายการสินค้าไม่ได้เลย ให้คืนรายการเดียวที่มีชื่อว่า "รวมยอดตามบิล" และใส่ยอดรวมเงินสุทธิที่เห็นลงในช่อง totalPrice
-        4. ห้ามส่งคืนอาเรย์ items ว่างเด็ดขาด อย่างน้อยต้องมี 1 รายการ
-        5. สำหรับน้ำแข็ง: สกัดจำนวนที่มาส่ง (delivered) และจำนวนที่คืนถุง (returned) จากข้อความในบิล`,
+        systemInstruction: `คุณคือผู้เชี่ยวชาญการอ่านบิลส่งของร้านชำไทย หน้าที่คือสกัดข้อมูลบิลให้แม่นยำที่สุด
+        1. สกัดชื่อสินค้า จำนวน และราคาสุทธิ
+        2. หากเป็นบิลน้ำแข็ง ให้สกัดจำนวนที่ส่ง (delivered) และจำนวนที่คืนถุง (returned)
+        3. คืนค่าเป็น JSON เท่านั้น`,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -133,120 +131,90 @@ export const processReceiptImage = async (base64Image: string) => {
             },
             iceMetrics: {
               type: Type.OBJECT,
-              properties: {
-                delivered: { type: Type.NUMBER },
-                returned: { type: Type.NUMBER }
-              }
-            },
-            notes: { type: Type.STRING }
+              properties: { delivered: { type: Type.NUMBER }, returned: { type: Type.NUMBER } }
+            }
           },
           required: ["category", "items"]
         }
       },
-      contents: {
-        parts: [
-          { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-          { text: "ช่วยอ่านบิลนี้และสกัดยอดเงินทั้งหมดมาให้คุณยายตรวจสอบหน่อยจ้ะ" }
-        ],
-      },
+      contents: { parts: [{ inlineData: { mimeType: 'image/jpeg', data: base64Image } }, { text: "ช่วยอ่านบิลนี้ให้หน่อยจ้ะ" }] },
     });
-    
     return JSON.parse(response.text || "{}");
   } catch (e: any) {
-    console.error("Gemini API Error:", e);
-    if (e.message?.includes("429") || e.message?.includes("quota") || e.message?.includes("RESOURCE_EXHAUSTED")) {
-      throw new Error("QUOTA_EXCEEDED");
-    }
-    throw new Error("ยายจ๋า อ่านบิลไม่สำเร็จจ้ะ");
+    if (e.message?.includes("429")) throw new Error("QUOTA_EXCEEDED");
+    throw new Error("อ่านบิลไม่สำเร็จจ้ะ");
   }
 };
 
-export const recognizeProduct = async (base64Image: string) => {
+export const recognizeProduct = async (base64Image: string, existingProductNames: string[] = []) => {
+  if (!isApiKeyReady()) throw new Error("MISSING_KEY");
+  
+  const productListContext = existingProductNames.length > 0 
+    ? `รายการสินค้าที่จดไว้ในร้านมีดังนี้: [${existingProductNames.join(", ")}] กรุณาเลือกชื่อที่ตรงกับในรูปมากที่สุดจากรายการนี้ หากไม่มีในรายการให้ตั้งชื่อใหม่ตามที่เห็น`
+    : "ระบุชื่อแบรนด์และขนาดบรรจุสินค้าให้ชัดเจน";
+
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: getApiKey() });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       config: {
-        systemInstruction: "ระบุชื่อแบรนด์และขนาดบรรจุสินค้า",
+        systemInstruction: `คุณคือผู้ช่วยร้านค้าไทย หน้าที่คือระบุสินค้าจากรูปภาพ ${productListContext}`,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
-          properties: { name: { type: Type.STRING } },
+          properties: { name: { type: Type.STRING, description: "ชื่อสินค้าที่ตรงกับในระบบหรือชื่อจริงของสินค้า" } },
           required: ["name"]
         }
       },
-      contents: {
-        parts: [
-          { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-          { text: "นี่คือสินค้าอะไร?" }
-        ],
-      },
+      contents: { parts: [{ inlineData: { mimeType: 'image/jpeg', data: base64Image } }, { text: "นี่คือสินค้าอะไรจ๊ะ?" }] },
     });
     return JSON.parse(response.text || "{}");
   } catch (e: any) {
-    if (e.message?.includes("429") || e.message?.includes("quota") || e.message?.includes("RESOURCE_EXHAUSTED")) {
-      throw new Error("QUOTA_EXCEEDED");
-    }
     throw new Error("จำสินค้าไม่ได้จ้ะ");
-  }
-};
-
-export const generateMascot = async () => {
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [{ text: 'A cute friendly Thai shop owner mascot character, 3D render style, warm colors, professional but approachable.' }],
-      },
-      config: { imageConfig: { aspectRatio: "1:1" } },
-    });
-    
-    const candidate = response.candidates?.[0];
-    if (candidate?.content?.parts) {
-      for (const part of candidate.content.parts) {
-        if (part.inlineData?.data) {
-          return `data:image/png;base64,${part.inlineData.data}`;
-        }
-      }
-    }
-    throw new Error("No image data found");
-  } catch (e) {
-    console.error("Mascot Error:", e);
-    throw new Error("ยายจ๋า วาดรูปไม่สำเร็จจ้ะ");
   }
 };
 
 export const speakText = async (text: string, persona: AiPersona = 'GRANDMA'): Promise<{ ok: boolean; error?: string }> => {
   if (!text.trim()) return { ok: true };
+  if (!isApiKeyReady()) return { ok: false, error: "MISSING_KEY" };
+  
   const ctx = await initAudio();
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const voiceMap: Record<AiPersona, string> = { 'GRANDMA': 'Kore', 'GIRLFRIEND': 'Puck', 'BOYFRIEND': 'Charon', 'PROFESSIONAL': 'Zephyr' };
+    const ai = new GoogleGenAI({ apiKey: getApiKey() });
+    
+    // ปรับการเลือกเสียง (Gemini Preview เสียงผู้หญิงค่อนข้างน้อย หลานพยายามเลือกโทนที่เหมาะสมที่สุด)
+    const voiceMap: Record<AiPersona, string> = { 
+      'GRANDMA': 'Puck', // เสียงนุ่ม สุภาพ
+      'GIRLFRIEND': 'Kore', // เสียงที่โทนสูงและแบนกว่าปกติเล็กน้อย
+      'BOYFRIEND': 'Charon', // เสียงทุ้มเข้ม
+      'PROFESSIONAL': 'Zephyr' // เสียงชัดเจน เป็นการเป็นงาน
+    };
+
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ parts: [{ text }] }],
       config: {
         responseModalities: [Modality.AUDIO],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceMap[persona] || 'Kore' } } },
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceMap[persona] || 'Puck' } } },
       },
     });
 
-    const candidate = response.candidates?.[0];
-    const part = candidate?.content?.parts?.find(p => !!p.inlineData?.data);
-    
-    if (part?.inlineData?.data) {
-      const audioBuffer = await decodePcmAudio(decodeBase64(part.inlineData.data), ctx, 24000, 1);
-      const source = ctx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(ctx.destination);
-      if (ctx.state === 'suspended') await ctx.resume();
-      source.start(0);
-      return { ok: true };
+    const candidates = response.candidates;
+    if (candidates && candidates.length > 0) {
+      const parts = candidates[0].content?.parts;
+      const part = parts?.find(p => !!p.inlineData?.data);
+      if (part?.inlineData?.data) {
+        const audioBuffer = await decodePcmAudio(decodeBase64(part.inlineData.data), ctx, 24000, 1);
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(ctx.destination);
+        if (ctx.state === 'suspended') await ctx.resume();
+        source.start(0);
+        return { ok: true };
+      }
     }
     return { ok: false, error: "No audio data" };
   } catch (e: any) {
-    console.error("Speak Error:", e);
     if (e.message?.includes("429")) return { ok: false, error: 'QUOTA_EXCEEDED' };
     return { ok: false, error: e.message };
   }

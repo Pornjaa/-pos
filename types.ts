@@ -41,15 +41,15 @@ export interface SyncConfig {
   isEnabled: boolean;
   lastSync?: number;
   ownerPin?: string;
-  aiPersona?: AiPersona; // เพิ่มตัวเลือกบุคลิกเอไอ
+  aiPersona?: AiPersona;
 }
 
 export interface SummaryStats {
-  daily: number; // ยอดขายรายวัน (Money In)
-  weekly: number; // ยอดขายรายสัปดาห์
-  monthly: number; // ยอดขายรายเดือน
-  yearly: number; // ยอดขายรายปี
-  dailyInvestment: number; // ยอดลงทุนรายวัน (Money Out)
+  daily: number;
+  weekly: number;
+  monthly: number;
+  yearly: number;
+  dailyInvestment: number;
   weeklyInvestment: number;
   monthlyInvestment: number;
   yearlyInvestment: number;
@@ -65,5 +65,5 @@ export interface PosProduct {
   price: number;
   costPrice: number;
   imageUrl?: string;
-  isQuickSelect?: boolean;
+  isRetailProduct?: boolean; // เปลี่ยนจาก isQuickSelect เป็น isRetailProduct
 }
