@@ -2,9 +2,10 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Category, AiPersona } from "../types";
 
+// ฟังก์ชันตรวจสอบคีย์ API
 export const isApiKeyReady = () => {
   const key = process.env.API_KEY;
-  return !!key && key.length > 10;
+  return typeof key === 'string' && key.length > 10;
 };
 
 // เช็คว่ามีการเลือก API Key ผ่าน AI Studio หรือยัง
@@ -200,15 +201,18 @@ export const generateMascot = async () => {
       },
       config: { imageConfig: { aspectRatio: "1:1" } },
     });
+    
     const candidate = response.candidates?.[0];
-    const parts = candidate?.content?.parts;
-    if (parts) {
-      for (const part of parts) {
-        if (part.inlineData?.data) return `data:image/png;base64,${part.inlineData.data}`;
+    if (candidate?.content?.parts) {
+      for (const part of candidate.content.parts) {
+        if (part.inlineData?.data) {
+          return `data:image/png;base64,${part.inlineData.data}`;
+        }
       }
     }
-    throw new Error("No image data");
+    throw new Error("No image data found");
   } catch (e) {
+    console.error("Mascot Error:", e);
     throw new Error("ยายจ๋า วาดรูปไม่สำเร็จจ้ะ");
   }
 };
@@ -227,8 +231,10 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA'): P
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceMap[persona] || 'Kore' } } },
       },
     });
-    const parts = response.candidates?.[0]?.content?.parts;
-    const part = parts?.find(p => !!p.inlineData?.data);
+
+    const candidate = response.candidates?.[0];
+    const part = candidate?.content?.parts?.find(p => !!p.inlineData?.data);
+    
     if (part?.inlineData?.data) {
       const audioBuffer = await decodePcmAudio(decodeBase64(part.inlineData.data), ctx, 24000, 1);
       const source = ctx.createBufferSource();
@@ -238,8 +244,10 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA'): P
       source.start(0);
       return { ok: true };
     }
+    return { ok: false, error: "No audio data" };
   } catch (e: any) {
+    console.error("Speak Error:", e);
     if (e.message?.includes("429")) return { ok: false, error: 'QUOTA_EXCEEDED' };
+    return { ok: false, error: e.message };
   }
-  return { ok: false };
 };
