@@ -134,15 +134,17 @@ export const generateMascot = async () => {
       config: { imageConfig: { aspectRatio: "1:1" } }
     });
     
-    // Fix TS2532: ป้องกัน candidates หรือ content เป็น undefined
-    const candidates = response.candidates;
-    if (candidates && candidates.length > 0 && candidates[0].content) {
-      const part = candidates[0].content.parts.find(p => p.inlineData);
-      if (part && part.inlineData) {
-        return `data:image/png;base64,${part.inlineData.data}`;
+    // ปรับปรุงการเช็คเพื่อความปลอดภัยสูงสุดและ Build ผ่าน (TS2532 Fix)
+    const firstCandidate = response.candidates?.[0];
+    const parts = firstCandidate?.content?.parts;
+    
+    if (parts && parts.length > 0) {
+      const partWithImage = parts.find(p => p.inlineData);
+      if (partWithImage && partWithImage.inlineData && partWithImage.inlineData.data) {
+        return `data:image/png;base64,${partWithImage.inlineData.data}`;
       }
     }
-    throw new Error("No image data");
+    throw new Error("No image data found");
   } catch (e) {
     throw new Error("วาดรูปไม่สำเร็จจ้ะ");
   }
@@ -151,7 +153,7 @@ export const generateMascot = async () => {
 export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') => {
   if (!text.trim()) return;
 
-  // ขั้นตอนสำคัญ: ปลุก AudioContext ทันที (ก่อน await นานๆ)
+  // ขั้นตอนสำคัญ: ปลุก AudioContext ทันที (ต้องเรียกก่อน await นานๆ เพื่อให้ Mobile ยอมรับ)
   const ctx = await initAudio();
 
   try {
@@ -167,11 +169,13 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
       },
     });
 
-    // Fix TS2532: ป้องกัน candidates หรือ content เป็น undefined ก่อนเข้าถึง parts
-    const candidates = response.candidates;
-    if (candidates && candidates.length > 0 && candidates[0].content) {
-      const part = candidates[0].content.parts.find(p => p.inlineData);
-      const base64Audio = part?.inlineData?.data;
+    // ปรับปรุงการสกัดข้อมูลเสียงให้ปลอดภัยต่อ TypeScript (TS2532 Fix)
+    const firstCandidate = response.candidates?.[0];
+    const parts = firstCandidate?.content?.parts;
+    
+    if (parts && parts.length > 0) {
+      const partWithAudio = parts.find(p => p.inlineData);
+      const base64Audio = partWithAudio?.inlineData?.data;
       
       if (base64Audio) {
         const bytes = decodeBase64(base64Audio);
