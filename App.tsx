@@ -7,7 +7,7 @@ import HistoryList from './components/HistoryList';
 import POSSystem from './components/POSSystem';
 import ProductManager from './components/ProductManager';
 import SyncManager from './components/SyncManager';
-import { processReceiptImage, speakText, generateMascot } from './services/geminiService';
+import { processReceiptImage, speakText, generateMascot, initAudio } from './services/geminiService';
 import { LayoutDashboard, History, Camera, Loader2, Store, Package, Power, Coffee, Zap, Cloud, ShieldAlert, Sparkles, Check, X, Plus, Minus, Info } from 'lucide-react';
 import { isSameDay, isSameWeek, isSameMonth, isSameYear } from 'date-fns';
 
@@ -102,6 +102,9 @@ const App: React.FC = () => {
 
   const handleCapture = async (base64: string) => {
     setIsCameraOpen(false);
+    // ปลุกระบบเสียงทันทีที่เริ่มโปรเซส
+    await initAudio();
+
     if (aiCredits <= 0) {
       speakText("เหรียญสแกนหมดแล้วนะ ต้องเติมหน่อยแล้วจ้ะ", persona);
       return;
@@ -127,8 +130,9 @@ const App: React.FC = () => {
     }
   };
 
-  const saveConfirmedRecord = () => {
+  const saveConfirmedRecord = async () => {
     if (!pendingRecord) return;
+    await initAudio();
     
     const newRecord: InventoryRecord = {
       id: crypto.randomUUID(),
@@ -149,19 +153,21 @@ const App: React.FC = () => {
   };
 
   const handleCreateMascot = async () => {
+    await initAudio();
     setIsProcessing(true);
     try {
       const imageUrl = await generateMascot();
       setOwnerPhoto(imageUrl);
       speakText("ว้าว รูปนี้สวยจังเลย ขอบใจมากนะ", persona);
     } catch (e) {
-      speakText("วาดรูปไม่สำเร็จเลย ลองใหม่อีกทีนะ", persona);
+      speakText("วาดรูปไม่สำเร็จเลย ลองใหมีกทีนะ", persona);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handlePOSSale = (items: any[], total: number) => {
+  const handlePOSSale = async (items: any[], total: number) => {
+    await initAudio();
     const newRecord: InventoryRecord = { 
       id: crypto.randomUUID(), 
       timestamp: Date.now(), 
@@ -189,7 +195,7 @@ const App: React.FC = () => {
       <div className="max-w-md mx-auto min-h-screen bg-gray-950 flex flex-col items-center justify-center p-8 text-center space-y-8">
         <Coffee className="text-blue-500 w-16 h-16 animate-pulse" />
         <h1 className="text-3xl font-black text-white">ปิดระบบพักผ่อนแล้วนะ</h1>
-        <button onClick={() => setIsSystemOff(false)} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black text-2xl flex items-center gap-4 justify-center shadow-xl"><Power size={32} /> เปิดระบบกันเถอะ</button>
+        <button onClick={async () => { await initAudio(); setIsSystemOff(false); }} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black text-2xl flex items-center gap-4 justify-center shadow-xl"><Power size={32} /> เปิดระบบกันเถอะ</button>
       </div>
     );
   }
@@ -268,21 +274,6 @@ const App: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                <div className="pt-2 border-t border-blue-200 flex justify-between items-center">
-                   <span className="text-[10px] font-black text-blue-400 uppercase">ยอดค้างสะสมรอบนี้</span>
-                   <span className="font-black text-blue-700 text-lg">{(pendingRecord.iceMetrics.delivered - pendingRecord.iceMetrics.returned) >= 0 ? '+' : ''}{pendingRecord.iceMetrics.delivered - pendingRecord.iceMetrics.returned}</span>
-                </div>
-              </div>
-
-              {/* Items List View Only */}
-              <div className="max-h-40 overflow-y-auto space-y-2 p-2">
-                <p className="text-[10px] font-black text-gray-400 uppercase ml-2">รายการที่เจอ</p>
-                {pendingRecord.items.map((item: any, idx: number) => (
-                  <div key={idx} className="flex justify-between items-center bg-gray-50 p-3 rounded-2xl text-sm">
-                    <span className="font-bold text-gray-700">{item.name} x{item.quantity}</span>
-                    <span className="font-black text-blue-600">฿{item.totalPrice?.toLocaleString()}</span>
-                  </div>
-                ))}
               </div>
 
               <div className="flex flex-col gap-3">
@@ -299,8 +290,10 @@ const App: React.FC = () => {
 
         {activeTab === 'dashboard' && <Dashboard 
           stats={stats} records={records} currentIceBalance={currentIceBalance} ownerPhoto={ownerPhoto}
-          onOpenTopUp={() => { setAiCredits(prev => prev + 50); speakText("เติมเหรียญให้แล้วนะจ๊ะ", persona); }} onStartScan={() => setIsCameraOpen(true)}
-          onStartSale={() => setActiveTab('pos')} onOpenManage={() => setActiveTab('manage')}
+          onOpenTopUp={async () => { await initAudio(); setAiCredits(prev => prev + 50); speakText("เติมเหรียญให้แล้วนะจ๊ะ", persona); }} 
+          onStartScan={async () => { await initAudio(); setIsCameraOpen(true); }}
+          onStartSale={async () => { await initAudio(); setActiveTab('pos'); }} 
+          onOpenManage={async () => { await initAudio(); setActiveTab('manage'); }}
           hideSensitiveData={syncConfig.role === 'STAFF'} 
         />}
         {activeTab === 'history' && <HistoryList records={records} onDelete={id => setRecords(prev => prev.filter(r => r.id !== id))} canDelete={syncConfig.role === 'OWNER'} />}
@@ -325,7 +318,7 @@ const App: React.FC = () => {
             ].map((tab) => (
               <button 
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)} 
+                onClick={async () => { await initAudio(); setActiveTab(tab.id as any); }} 
                 className={`flex flex-col items-center gap-1.5 flex-1 transition-all duration-300 ${activeTab === tab.id ? themes[tab.id as keyof typeof themes].text + ' scale-110' : 'text-gray-300'}`}
               >
                 <div className={`p-2 rounded-2xl ${activeTab === tab.id ? themes[tab.id as keyof typeof themes].bg : ''}`}>
