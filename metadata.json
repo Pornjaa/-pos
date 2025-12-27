@@ -1,0 +1,8 @@
+{
+  "name": "คุณยาย POS",
+  "description": "ระบบจัดการร้านค้าอัจฉริยะสำหรับคุณยาย รองรับการสแกนบิลและคำนวณน้ำแข็งค้างส่ง",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
