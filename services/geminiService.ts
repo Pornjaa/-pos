@@ -30,7 +30,6 @@ const handleAiError = (e: any) => {
   const errorMessage = e?.message || String(e);
   
   if (errorMessage.includes("Requested entity was not found")) {
-    // กรณีนี้มักเกิดจากยังไม่ได้เปิด API ใน Google Cloud หรือเลือกโปรเจกต์ผิด
     throw new Error("ยายจ๋า โปรเจกต์นี้ยังไม่ได้ 'เปิดสวิตช์ AI' จ้ะ หรืออาจจะยังไม่ได้ผูกบัตรให้โปรเจกต์นี้โดยเฉพาะนะจ๊ะ");
   }
   
@@ -91,7 +90,8 @@ export const processReceiptImage = async (base64Image: string) => {
       },
     });
     
-    const cleanedText = cleanJsonResponse(response.text || "{}");
+    const text = response.text || "{}";
+    const cleanedText = cleanJsonResponse(text);
     return JSON.parse(cleanedText);
   } catch (e) {
     return handleAiError(e);
@@ -139,7 +139,13 @@ export const generateMascot = async () => {
       config: { imageConfig: { aspectRatio: "1:1" } }
     });
 
-    for (const part of response.candidates[0].content.parts) {
+    // ด่านตรวจความปลอดภัย: ตรวจสอบว่ามีข้อมูลส่งกลับมาจริงๆ หรือไม่
+    const candidates = response.candidates;
+    if (!candidates || candidates.length === 0 || !candidates[0].content?.parts) {
+      throw new Error("ยายจ๋า AI ไม่ยอมวาดรูปให้จ้ะ ลองใหม่อีกทีนะ");
+    }
+
+    for (const part of candidates[0].content.parts) {
       if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
     }
     throw new Error("สร้างรูปไม่สำเร็จจ้ะ");
@@ -157,7 +163,6 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
     audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
   }
 
-  // แก้ปัญหาเสียงไม่ออก: ต้อง Resume ทุกครั้งที่มีการเรียกใช้
   if (audioCtx.state === 'suspended') {
     await audioCtx.resume();
   }
@@ -175,7 +180,10 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
       },
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    // ด่านตรวจความปลอดภัยสำหรับเสียง
+    const candidates = response.candidates;
+    const base64Audio = candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    
     if (base64Audio) {
       const bytes = decodeBase64(base64Audio);
       const dataInt16 = new Int16Array(bytes.buffer);
