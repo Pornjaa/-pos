@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Cloud, ShieldCheck, Smartphone, Lock, Save, Info, RefreshCw, X, Camera, User, Loader2, Download, Upload, Sparkles, Wand2, Heart, Star, Briefcase, Key, ExternalLink, Volume2, Settings2 } from 'lucide-react';
+import { Cloud, Save, Camera, User, Wand2, Heart, Star, Briefcase, Volume2, X } from 'lucide-react';
 import { SyncConfig, AiPersona } from '../types';
 import { speakText } from '../services/geminiService';
 
@@ -15,35 +15,12 @@ interface SyncManagerProps {
 }
 
 const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhoto, onSave, onBackup, onRestore, onCreateMascot }) => {
-  const [shopId, setShopId] = useState(config.shopId);
-  const [role, setRole] = useState(config.role);
   const [aiPersona, setAiPersona] = useState<AiPersona>(config.aiPersona || 'GRANDMA');
   const [pin, setPin] = useState('');
-  const [showPinEntry, setShowPinEntry] = useState(false);
-  const [tempRole, setTempRole] = useState<'OWNER' | 'STAFF' | 'SET_PIN' | null>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
-  const [hasApiKey, setHasApiKey] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const checkKey = async () => {
-      if ((window as any).aistudio?.hasSelectedApiKey) {
-        const selected = await (window as any).aistudio.hasSelectedApiKey();
-        setHasApiKey(selected);
-      }
-    };
-    checkKey();
-  }, []);
-
-  const handleConnectKey = async () => {
-    if ((window as any).aistudio?.openSelectKey) {
-      await (window as any).aistudio.openSelectKey();
-      setHasApiKey(true);
-    }
-  };
 
   const handleTestSound = () => {
     speakText("เสียงดังฟังชัดไหมจ๊ะยาย ถ้าได้ยินแล้วแสดงว่าระบบเสียงพร้อมทำงานแล้วนะ", aiPersona);
@@ -66,15 +43,8 @@ const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhot
     setIsCameraOpen(false);
   };
 
-  const handleRoleChange = (newRole: 'OWNER' | 'STAFF') => {
-    if (newRole === 'OWNER' && config.ownerPin) { setTempRole('OWNER'); setShowPinEntry(true); }
-    else setRole(newRole);
-  };
-
   const handleFinalSave = () => {
-    if (role === 'OWNER' && !config.ownerPin && !pin) { setTempRole('SET_PIN'); setShowPinEntry(true); return; }
-    onSave({ ...config, shopId, role, aiPersona, isEnabled: !!shopId, ownerPin: (tempRole === 'SET_PIN' ? pin : config.ownerPin) });
-    setShowPinEntry(false); setPin('');
+    onSave({ ...config, aiPersona, ownerPin: pin || config.ownerPin });
     speakText("บันทึกเรียบร้อยแล้วจ้ะ", aiPersona);
   };
 
@@ -101,54 +71,17 @@ const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhot
             </div>
           </div>
           <div>
-            <h2 className="text-2xl font-black text-gray-800">ข้อมูลร้าน</h2>
+            <h2 className="text-2xl font-black text-gray-800">โปรไฟล์ของคุณยาย</h2>
           </div>
         </div>
 
-        {/* AI Key & Billing Helper */}
-        <div className="bg-gray-50 p-6 rounded-[35px] border-2 border-gray-100 space-y-4">
-           <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                 <div className={`p-2 rounded-xl ${hasApiKey ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                    <Key size={20} />
-                 </div>
-                 <div>
-                    <p className="text-xs font-black text-gray-700">กุญแจ AI</p>
-                    <p className={`text-[10px] font-bold ${hasApiKey ? 'text-green-500' : 'text-red-500'}`}>
-                       {hasApiKey ? 'เชื่อมต่อแล้วจ้ะ' : 'ยังไม่ได้เชื่อมต่อ'}
-                    </p>
-                 </div>
-              </div>
-              <button onClick={handleConnectKey} className="bg-blue-600 text-white px-4 py-2 rounded-full text-[10px] font-black uppercase shadow-lg active:scale-90 transition-all">เชื่อมต่อ AI</button>
-           </div>
-
-           {/* ปุ่มช่วยเปิดสวิตช์ AI สำหรับคุณยาย */}
-           <div className="bg-white p-4 rounded-2xl border border-blue-100 space-y-3">
-             <div className="flex items-start gap-2">
-               <Info size={14} className="text-blue-500 shrink-0 mt-0.5" />
-               <p className="text-[10px] text-gray-500 font-bold leading-tight">
-                 ยายจ๋า ถ้ากด "เชื่อมต่อ AI" แล้วยังขึ้น Error แดงๆ แปลว่ายายต้องไป **"เปิดสวิตช์ AI"** ให้โปรเจกต์ของยายก่อนนะจ๊ะ (ใช้ปุ่มข้างล่างนี้เลย):
-               </p>
-             </div>
-             <a 
-               href="https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com" 
-               target="_blank" 
-               rel="noopener noreferrer"
-               className="w-full bg-blue-50 text-blue-700 py-3 rounded-xl text-[10px] font-black flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors"
-             >
-               <Settings2 size={14} /> กดที่นี่เพื่อ "เปิดสวิตช์ AI"
-             </a>
-             <div className="flex justify-center">
-               <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[9px] text-blue-400 font-bold underline flex items-center gap-1"><ExternalLink size={10}/> วิธีผูกบัตรเครดิต</a>
-             </div>
-           </div>
-
-           {/* ปุ่มทดสอบเสียง */}
+        {/* ปุ่มทดสอบเสียง */}
+        <div className="bg-gray-50 p-4 rounded-[35px] border-2 border-gray-100">
            <button 
              onClick={handleTestSound}
-             className="w-full bg-rose-50 text-rose-600 py-4 rounded-2xl text-xs font-black flex items-center justify-center gap-3 border border-rose-100 active:scale-95 transition-all"
+             className="w-full bg-rose-50 text-rose-600 py-6 rounded-2xl text-sm font-black flex items-center justify-center gap-3 border border-rose-100 active:scale-95 transition-all shadow-sm"
            >
-             <Volume2 size={18} /> ทดสอบเสียง (กดดูนะจ๊ะ)
+             <Volume2 size={24} /> ทดสอบเสียงยายดูจ้ะ
            </button>
         </div>
 
@@ -182,6 +115,7 @@ const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhot
 
       {isCameraOpen && (
         <div className="fixed inset-0 z-[250] bg-black flex flex-col">
+          {/* Fix: Icon 'X' now imported from lucide-react */}
           <div className="p-8 flex justify-between items-center text-white bg-black/40 absolute top-0 left-0 right-0 z-20"><button onClick={() => setIsCameraOpen(false)} className="p-4 bg-white/10 rounded-full backdrop-blur-md"><X size={32}/></button><span className="font-black text-xl uppercase tracking-widest">ถ่ายรูปคุณ</span><div className="w-14"></div></div>
           <video ref={videoRef} autoPlay playsInline className="flex-1 object-cover scale-x-[-1]" />
           <div className="p-12 flex justify-center bg-black"><button onClick={capturePhoto} className="w-28 h-28 bg-white rounded-full flex items-center justify-center border-[12px] border-gray-100 active:scale-90 transition-all"><Camera size={56} className="text-rose-600" /></button></div>

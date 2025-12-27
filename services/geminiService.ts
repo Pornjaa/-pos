@@ -2,12 +2,9 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Category, AiPersona } from "../types";
 
-// กฎเหล็ก: สร้างใหม่ทุกครั้งก่อนเรียกใช้เพื่อให้ได้ Key ล่าสุดจาก Dialog
-const getAi = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey || apiKey === "undefined") return null;
-  return new GoogleGenAI({ apiKey });
-};
+// ใช้กุญแจจากระบบโดยตรง ไม่ต้องผ่าน Dialog ให้ยุ่งยาก
+// @google/genai fix: Initializing GoogleGenAI client with named parameter apiKey from process.env.API_KEY directly.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 let audioCtx: AudioContext | null = null;
 
@@ -15,7 +12,8 @@ const cleanJsonResponse = (text: string) => {
   return text.replace(/```json/g, '').replace(/```/g, '').trim();
 };
 
-const decodeBase64 = (base64: string) => {
+// ฟังก์ชันถอดรหัส Base64 เป็น Bytes ตามตัวอย่างมาตรฐาน
+function decode(base64: string) {
   const binaryString = atob(base64);
   const len = binaryString.length;
   const bytes = new Uint8Array(len);
@@ -23,30 +21,29 @@ const decodeBase64 = (base64: string) => {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes;
-};
+}
 
-const handleAiError = (e: any) => {
-  console.error("AI Error Detail:", e);
-  const errorMessage = e?.message || String(e);
-  
-  if (errorMessage.includes("Requested entity was not found")) {
-    throw new Error("ยายจ๋า โปรเจกต์นี้ยังไม่ได้ 'เปิดสวิตช์ AI' จ้ะ หรืออาจจะยังไม่ได้ผูกบัตรให้โปรเจกต์นี้โดยเฉพาะนะจ๊ะ");
-  }
-  
-  if (errorMessage.includes("API_KEY_INVALID") || errorMessage.includes("403")) {
-    if ((window as any).aistudio?.openSelectKey) {
-      (window as any).aistudio.openSelectKey();
+// ฟังก์ชันถอดรหัสเสียง Raw PCM ตามที่ API กำหนด (ห้ามใช้ decodeAudioData ปกติ)
+async function decodePcmAudio(
+  data: Uint8Array,
+  ctx: AudioContext,
+  sampleRate: number,
+  numChannels: number,
+): Promise<AudioBuffer> {
+  const dataInt16 = new Int16Array(data.buffer);
+  const frameCount = dataInt16.length / numChannels;
+  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
     }
-    throw new Error("กุญแจ AI มีปัญหาจ้ะยาย กำลังเปิดหน้าเลือกกุญแจให้ใหม่นะ");
   }
-  
-  throw e;
-};
+  return buffer;
+}
 
 export const processReceiptImage = async (base64Image: string) => {
-  const ai = getAi();
-  if (!ai) throw new Error("ยายจ๋า ต้องกดเชื่อมต่อระบบ AI ในหน้าตั้งค่าก่อนนะจ๊ะ");
-
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -90,18 +87,16 @@ export const processReceiptImage = async (base64Image: string) => {
       },
     });
     
+    // @google/genai fix: The .text property is a getter that returns the generated string directly.
     const text = response.text || "{}";
-    const cleanedText = cleanJsonResponse(text);
-    return JSON.parse(cleanedText);
+    return JSON.parse(cleanJsonResponse(text));
   } catch (e) {
-    return handleAiError(e);
+    console.error("Process Receipt Error:", e);
+    throw new Error("ยายจ๋า อ่านบิลไม่สำเร็จจ้ะ ตรวจสอบการเชื่อมต่ออินเทอร์เน็ตนะ");
   }
 };
 
 export const recognizeProduct = async (base64Image: string) => {
-  const ai = getAi();
-  if (!ai) throw new Error("ยายจ๋า ต้องกดเชื่อมต่อระบบ AI");
-
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -122,16 +117,15 @@ export const recognizeProduct = async (base64Image: string) => {
       },
     });
     
+    // @google/genai fix: The .text property is a getter that returns the generated string directly.
     return JSON.parse(cleanJsonResponse(response.text || "{}"));
   } catch (e) {
-    return handleAiError(e);
+    console.error("Recognize Product Error:", e);
+    throw new Error("จำสินค้าไม่ได้จ้ะยาย");
   }
 };
 
 export const generateMascot = async () => {
-  const ai = getAi();
-  if (!ai) throw new Error("ยายจ๋า ต้องกดเชื่อมต่อระบบ AI");
-
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
@@ -139,25 +133,21 @@ export const generateMascot = async () => {
       config: { imageConfig: { aspectRatio: "1:1" } }
     });
 
-    // ด่านตรวจความปลอดภัย: ตรวจสอบว่ามีข้อมูลส่งกลับมาจริงๆ หรือไม่
     const candidates = response.candidates;
-    if (!candidates || candidates.length === 0 || !candidates[0].content?.parts) {
-      throw new Error("ยายจ๋า AI ไม่ยอมวาดรูปให้จ้ะ ลองใหม่อีกทีนะ");
+    if (candidates && candidates.length > 0 && candidates[0].content?.parts) {
+      for (const part of candidates[0].content.parts) {
+        if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
+      }
     }
-
-    for (const part of candidates[0].content.parts) {
-      if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
-    }
-    throw new Error("สร้างรูปไม่สำเร็จจ้ะ");
+    throw new Error("ไม่มีรูปส่งกลับมาจ้ะ");
   } catch (e) {
-    return handleAiError(e);
+    console.error("Generate Mascot Error:", e);
+    throw new Error("ยายจ๋า วาดรูปไม่สำเร็จจ้ะ");
   }
 };
 
 export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') => {
   if (!text.trim()) return;
-  const ai = getAi();
-  if (!ai) return;
 
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
@@ -173,27 +163,23 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
     
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `Speak in Thai: ${text}` }] }],
+      contents: [{ parts: [{ text: `Say in Thai naturally: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
       },
     });
 
-    // ด่านตรวจความปลอดภัยสำหรับเสียง
     const candidates = response.candidates;
+    // @google/genai fix: Correctly accessing raw audio bytes from candidates parts.
     const base64Audio = candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     
     if (base64Audio) {
-      const bytes = decodeBase64(base64Audio);
-      const dataInt16 = new Int16Array(bytes.buffer);
-      const buffer = audioCtx.createBuffer(1, dataInt16.length, 24000);
-      const channelData = buffer.getChannelData(0);
-      for (let i = 0; i < dataInt16.length; i++) {
-        channelData[i] = dataInt16[i] / 32768.0;
-      }
+      const bytes = decode(base64Audio);
+      const audioBuffer = await decodePcmAudio(bytes, audioCtx, 24000, 1);
+      
       const source = audioCtx.createBufferSource();
-      source.buffer = buffer;
+      source.buffer = audioBuffer;
       source.connect(audioCtx.destination);
       source.start();
     }
