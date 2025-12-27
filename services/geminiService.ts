@@ -153,7 +153,6 @@ export const processReceiptImage = async (base64Image: string) => {
     return JSON.parse(response.text || "{}");
   } catch (e: any) {
     console.error("Gemini API Error:", e);
-    // ตรวจสอบว่าเป็นเออเร่อเรื่องโควต้าหรือไม่
     if (e.message?.includes("429") || e.message?.includes("quota") || e.message?.includes("RESOURCE_EXHAUSTED")) {
       throw new Error("QUOTA_EXCEEDED");
     }
@@ -202,8 +201,9 @@ export const generateMascot = async () => {
       config: { imageConfig: { aspectRatio: "1:1" } },
     });
     const candidate = response.candidates?.[0];
-    if (candidate?.content?.parts) {
-      for (const part of candidate.content.parts) {
+    const parts = candidate?.content?.parts;
+    if (parts) {
+      for (const part of parts) {
         if (part.inlineData?.data) return `data:image/png;base64,${part.inlineData.data}`;
       }
     }
@@ -227,7 +227,8 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA'): P
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceMap[persona] || 'Kore' } } },
       },
     });
-    const part = response.candidates?.[0]?.content?.parts.find(p => !!p.inlineData?.data);
+    const parts = response.candidates?.[0]?.content?.parts;
+    const part = parts?.find(p => !!p.inlineData?.data);
     if (part?.inlineData?.data) {
       const audioBuffer = await decodePcmAudio(decodeBase64(part.inlineData.data), ctx, 24000, 1);
       const source = ctx.createBufferSource();
