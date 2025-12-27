@@ -2,7 +2,13 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Category, AiPersona } from "../types";
 
-const getAi = () => new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// กฎเหล็ก: สร้างใหม่ทุกครั้งก่อนเรียกใช้เพื่อให้ได้ Key ล่าสุดจาก Dialog
+const getAi = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey || apiKey === "undefined") return null;
+  return new GoogleGenAI({ apiKey });
+};
+
 let audioCtx: AudioContext | null = null;
 
 const cleanJsonResponse = (text: string) => {
@@ -19,189 +25,171 @@ const decodeBase64 = (base64: string) => {
   return bytes;
 };
 
+const handleAiError = (e: any) => {
+  console.error("AI Error Detail:", e);
+  const errorMessage = e?.message || String(e);
+  
+  if (errorMessage.includes("Requested entity was not found")) {
+    // กรณีนี้มักเกิดจากยังไม่ได้เปิด API ใน Google Cloud หรือเลือกโปรเจกต์ผิด
+    throw new Error("ยายจ๋า โปรเจกต์นี้ยังไม่ได้ 'เปิดสวิตช์ AI' จ้ะ หรืออาจจะยังไม่ได้ผูกบัตรให้โปรเจกต์นี้โดยเฉพาะนะจ๊ะ");
+  }
+  
+  if (errorMessage.includes("API_KEY_INVALID") || errorMessage.includes("403")) {
+    if ((window as any).aistudio?.openSelectKey) {
+      (window as any).aistudio.openSelectKey();
+    }
+    throw new Error("กุญแจ AI มีปัญหาจ้ะยาย กำลังเปิดหน้าเลือกกุญแจให้ใหม่นะ");
+  }
+  
+  throw e;
+};
+
 export const processReceiptImage = async (base64Image: string) => {
   const ai = getAi();
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    config: {
-      systemInstruction: "คุณคือผู้เชี่ยวชาญการอ่านบิลสินค้าในไทย สกัดข้อมูลจากรูปภาพบิลส่งของอย่างละเอียดและแม่นยำที่สุด",
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          category: { 
-            type: Type.STRING, 
-            description: "หมวดหมู่สินค้าหลักในบิลนี้",
-            enum: ["ICE", "BEVERAGE", "OTHERS"]
-          },
-          items: {
-            type: Type.ARRAY,
+  if (!ai) throw new Error("ยายจ๋า ต้องกดเชื่อมต่อระบบ AI ในหน้าตั้งค่าก่อนนะจ๊ะ");
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      config: {
+        systemInstruction: "คุณคือผู้เชี่ยวชาญการอ่านบิลสินค้าในไทย สกัดข้อมูลจากรูปภาพบิลส่งของอย่างละเอียดและแม่นยำที่สุด",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            category: { type: Type.STRING, enum: ["ICE", "BEVERAGE", "OTHERS"] },
             items: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  quantity: { type: Type.NUMBER },
+                  unitPrice: { type: Type.NUMBER },
+                  totalPrice: { type: Type.NUMBER }
+                },
+                required: ["name", "quantity", "unitPrice", "totalPrice"]
+              }
+            },
+            iceMetrics: {
               type: Type.OBJECT,
               properties: {
-                name: { type: Type.STRING, description: "ชื่อสินค้า" },
-                quantity: { type: Type.NUMBER, description: "จำนวน" },
-                unitPrice: { type: Type.NUMBER, description: "ราคาต่อหน่วย" },
-                totalPrice: { type: Type.NUMBER, description: "ราคารวมของรายการนี้" }
-              },
-              required: ["name", "quantity", "unitPrice", "totalPrice"]
-            }
+                delivered: { type: Type.NUMBER },
+                returned: { type: Type.NUMBER }
+              }
+            },
+            notes: { type: Type.STRING }
           },
-          iceMetrics: {
-            type: Type.OBJECT,
-            properties: {
-              delivered: { type: Type.NUMBER, description: "จำนวนกระสอบน้ำแข็งที่มาส่ง" },
-              returned: { type: Type.NUMBER, description: "จำนวนกระสอบน้ำแข็งที่เก็บคืน" }
-            }
-          },
-          notes: { type: Type.STRING, description: "หมายเหตุเพิ่มเติม" }
-        },
-        required: ["category", "items"]
-      }
-    },
-    contents: {
-      parts: [
-        { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-        { text: "อ่านบิลนี้และสรุปข้อมูลสินค้าทั้งหมด รวมถึงจำนวนการส่งและคืนกระสอบน้ำแข็งถ้ามี" }
-      ],
-    },
-  });
-  
-  try {
+          required: ["category", "items"]
+        }
+      },
+      contents: {
+        parts: [
+          { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
+          { text: "อ่านบิลนี้และสกัดข้อมูลสินค้า" }
+        ],
+      },
+    });
+    
     const cleanedText = cleanJsonResponse(response.text || "{}");
     return JSON.parse(cleanedText);
   } catch (e) {
-    console.error("JSON Parse Error:", e, response.text);
-    throw new Error("อ่านบิลไม่ออกเลยจ้ะ");
+    return handleAiError(e);
   }
 };
 
 export const recognizeProduct = async (base64Image: string) => {
   const ai = getAi();
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    config: {
-      systemInstruction: "คุณคือเครื่องสแกนสินค้าอัจฉริยะ ระบุชื่อแบรนด์และขนาดบรรจุจากรูปลักษณ์ภายนอก",
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          name: { type: Type.STRING, description: "ชื่อสินค้าและขนาดบรรจุ" }
-        },
-        required: ["name"]
-      }
-    },
-    contents: {
-      parts: [
-        { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-        { text: "นี่คือสินค้าอะไร? ตอบชื่อยี่ห้อและขนาดเป็นภาษาไทยสั้นๆ" }
-      ],
-    },
-  });
-  
+  if (!ai) throw new Error("ยายจ๋า ต้องกดเชื่อมต่อระบบ AI");
+
   try {
-    const cleanedText = cleanJsonResponse(response.text || "{}");
-    return JSON.parse(cleanedText);
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      config: {
+        systemInstruction: "ระบุชื่อแบรนด์และขนาดบรรจุสินค้า",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: { name: { type: Type.STRING } },
+          required: ["name"]
+        }
+      },
+      contents: {
+        parts: [
+          { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
+          { text: "นี่คือสินค้าอะไร?" }
+        ],
+      },
+    });
+    
+    return JSON.parse(cleanJsonResponse(response.text || "{}"));
   } catch (e) {
-    throw new Error("ไม่รู้จักสินค้านี้จ้ะ");
+    return handleAiError(e);
   }
 };
 
 export const generateMascot = async () => {
   const ai = getAi();
-  const prompt = "A friendly, modern Thai grandmother mascot, cute 3D Pixar character style, wearing a colorful blue apron with a small heart, holding a refreshing glass of iced tea, smiling warmly with glasses, bright white background, high quality, vibrant colors";
-  
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-image',
-    contents: {
-      parts: [{ text: prompt }],
-    },
-    config: {
-      imageConfig: {
-        aspectRatio: "1:1"
-      }
-    }
-  });
+  if (!ai) throw new Error("ยายจ๋า ต้องกดเชื่อมต่อระบบ AI");
 
-  const candidates = response?.candidates;
-  if (!candidates || candidates.length === 0 || !candidates[0]?.content?.parts) {
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: { parts: [{ text: "A friendly Thai grandmother mascot, Pixar style, 3D" }] },
+      config: { imageConfig: { aspectRatio: "1:1" } }
+    });
+
+    for (const part of response.candidates[0].content.parts) {
+      if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
+    }
     throw new Error("สร้างรูปไม่สำเร็จจ้ะ");
+  } catch (e) {
+    return handleAiError(e);
   }
-
-  for (const part of candidates[0].content.parts) {
-    if (part.inlineData) {
-      return `data:image/png;base64,${part.inlineData.data}`;
-    }
-  }
-  throw new Error("สร้างรูปไม่สำเร็จจ้ะ");
 };
 
 export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') => {
   if (!text.trim()) return;
+  const ai = getAi();
+  if (!ai) return;
 
-  // 1. เตรียม AudioContext และปลุกให้ตื่น (Resume) เผื่อเบราว์เซอร์บล็อกไว้
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
   }
 
+  // แก้ปัญหาเสียงไม่ออก: ต้อง Resume ทุกครั้งที่มีการเรียกใช้
   if (audioCtx.state === 'suspended') {
     await audioCtx.resume();
   }
 
   try {
-    const ai = getAi();
-    let personaInstruction = "";
-    let voiceName = "Kore"; 
-
-    switch(persona) {
-      case 'GRANDMA':
-        personaInstruction = "Speak as a kind Thai grandmother. Use 'นะลูก', 'จ้ะ'. Tone: warm and gentle.";
-        voiceName = "Kore";
-        break;
-      case 'GIRLFRIEND':
-        personaInstruction = "Speak as an affectionate Thai girlfriend. Use 'ที่รักจ๋า', 'นะคะ'. Tone: sweet and playful.";
-        voiceName = "Puck";
-        break;
-      case 'BOYFRIEND':
-        personaInstruction = "Speak as a caring Thai boyfriend. Use 'ที่รักครับ', 'นะครับ'. Tone: gentle and protective.";
-        voiceName = "Charon";
-        break;
-      case 'PROFESSIONAL':
-        personaInstruction = "Speak as a professional Thai assistant. Tone: clear and formal.";
-        voiceName = "Zephyr";
-        break;
-    }
+    const voiceMap = { 'GRANDMA': 'Kore', 'GIRLFRIEND': 'Puck', 'BOYFRIEND': 'Charon', 'PROFESSIONAL': 'Zephyr' };
+    const voiceName = voiceMap[persona] || 'Kore';
     
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `Instruction: ${personaInstruction}. Speech Content: ${text}` }] }],
+      contents: [{ parts: [{ text: `Speak in Thai: ${text}` }] }],
       config: {
-        systemInstruction: "You are a professional Text-to-Speech engine. Your ONLY output is audio content. Do not provide any text response.",
         responseModalities: [Modality.AUDIO],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } },
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
       },
     });
 
-    const candidates = response?.candidates;
-    const base64Audio = candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (base64Audio) {
       const bytes = decodeBase64(base64Audio);
-      // ถอดรหัส PCM 16-bit (2 bytes ต่อ 1 sample)
-      const dataInt16 = new Int16Array(bytes.buffer, 0, Math.floor(bytes.byteLength / 2));
-      
+      const dataInt16 = new Int16Array(bytes.buffer);
       const buffer = audioCtx.createBuffer(1, dataInt16.length, 24000);
       const channelData = buffer.getChannelData(0);
       for (let i = 0; i < dataInt16.length; i++) {
         channelData[i] = dataInt16[i] / 32768.0;
       }
-      
       const source = audioCtx.createBufferSource();
       source.buffer = buffer;
       source.connect(audioCtx.destination);
       source.start();
     }
-  } catch (e) { 
+  } catch (e) {
     console.error("TTS Error:", e);
   }
 };
