@@ -9,6 +9,16 @@ const cleanJsonResponse = (text: string) => {
   return text.replace(/```json/g, '').replace(/```/g, '').trim();
 };
 
+const decodeBase64 = (base64: string) => {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+};
+
 export const processReceiptImage = async (base64Image: string) => {
   const ai = getAi();
   const response = await ai.models.generateContent({
@@ -128,6 +138,16 @@ export const generateMascot = async () => {
 
 export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') => {
   if (!text.trim()) return;
+
+  // 1. เตรียม AudioContext และปลุกให้ตื่น (Resume) เผื่อเบราว์เซอร์บล็อกไว้
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+  }
+
+  if (audioCtx.state === 'suspended') {
+    await audioCtx.resume();
+  }
+
   try {
     const ai = getAi();
     let personaInstruction = "";
@@ -164,24 +184,22 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
 
     const candidates = response?.candidates;
     const base64Audio = candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    
     if (base64Audio) {
-      if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      const bytes = decodeBase64(base64Audio);
+      // ถอดรหัส PCM 16-bit (2 bytes ต่อ 1 sample)
+      const dataInt16 = new Int16Array(bytes.buffer, 0, Math.floor(bytes.byteLength / 2));
       
-      const binaryString = atob(base64Audio);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
-      
-      const dataInt16 = new Int16Array(bytes.buffer);
-      if (audioCtx) {
-        const buffer = audioCtx.createBuffer(1, dataInt16.length, 24000);
-        const channelData = buffer.getChannelData(0);
-        for (let i = 0; i < dataInt16.length; i++) channelData[i] = dataInt16[i] / 32768.0;
-        
-        const source = audioCtx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(audioCtx.destination);
-        source.start();
+      const buffer = audioCtx.createBuffer(1, dataInt16.length, 24000);
+      const channelData = buffer.getChannelData(0);
+      for (let i = 0; i < dataInt16.length; i++) {
+        channelData[i] = dataInt16[i] / 32768.0;
       }
+      
+      const source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioCtx.destination);
+      source.start();
     }
   } catch (e) { 
     console.error("TTS Error:", e);
