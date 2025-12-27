@@ -7,9 +7,8 @@ import HistoryList from './components/HistoryList';
 import POSSystem from './components/POSSystem';
 import ProductManager from './components/ProductManager';
 import SyncManager from './components/SyncManager';
-// Remove non-existent generateMascot import from geminiService
 import { processReceiptImage, speakText, initAudio, openKeySelector, hasCustomKey } from './services/geminiService';
-import { LayoutDashboard, History, Camera, Loader2, Store, Package, Power, Coffee, Zap, Cloud, ShieldAlert, Sparkles, Check, X, Plus, Minus, Info, Trash2, Tag, Edit3, Coins, Eye, RotateCw, Key, Shield } from 'lucide-react';
+import { LayoutDashboard, History, Camera, Loader2, Store, Package, Power, Coffee, Zap, Cloud, ShieldAlert, Sparkles, Check, X, Plus, Minus, Info, Trash2, Tag, Edit3, Coins, Eye, RotateCw, Key, Shield, AlertTriangle } from 'lucide-react';
 import { isSameDay, isSameWeek, isSameMonth, isSameYear } from 'date-fns';
 
 const App: React.FC = () => {
@@ -156,7 +155,6 @@ const App: React.FC = () => {
     const success = await openKeySelector();
     if (success) {
       setShowQuotaError(false);
-      // เมื่อเลือกกุญแจแล้ว ให้ลองรันใหม่อีกครั้งถ้ายังมีรูปค้างอยู่
       if (lastCapturedImage) {
         handleCapture(lastCapturedImage.split(',')[1]);
       }
@@ -168,6 +166,16 @@ const App: React.FC = () => {
     await initAudio();
     const items = pendingRecord.items.filter((i: any) => i.name.trim() !== '');
     const total = items.reduce((a: number, b: any) => a + (parseFloat(b.totalPrice) || 0), 0);
+    
+    // อัปเดตสต๊อกจากการลงของ
+    setPosProducts(prev => prev.map(p => {
+      const matchedItem = items.find((item: any) => item.name.toLowerCase().trim() === p.name.toLowerCase().trim());
+      if (matchedItem) {
+        return { ...p, stockQuantity: (p.stockQuantity || 0) + matchedItem.quantity };
+      }
+      return p;
+    }));
+
     const newRecord: InventoryRecord = {
       id: crypto.randomUUID(),
       timestamp: Date.now(),
@@ -182,17 +190,22 @@ const App: React.FC = () => {
     setRecords(prev => [...prev, newRecord]);
     setPendingRecord(null);
     setLastCapturedImage(null);
-    speakText(`บันทึกเรียบร้อยแล้วจ้ะยาย`, persona);
+    speakText(`บันทึกและเพิ่มสต๊อกให้เรียบร้อยแล้วจ้ะยาย`, persona);
     setActiveTab('history');
   };
 
-  const pendingTotal = useMemo(() => {
-    if (!pendingRecord) return 0;
-    return pendingRecord.items.reduce((a: number, b: any) => a + (parseFloat(b.totalPrice) || 0), 0);
-  }, [pendingRecord]);
-
   const handlePOSSale = async (items: any[], total: number) => {
     await initAudio();
+    
+    // ตัดสต๊อกจากการขาย
+    setPosProducts(prev => prev.map(p => {
+      const soldItem = items.find(i => i.product.id === p.id);
+      if (soldItem) {
+        return { ...p, stockQuantity: Math.max(0, (p.stockQuantity || 0) - soldItem.qty) };
+      }
+      return p;
+    }));
+
     const newRecord: InventoryRecord = { 
       id: crypto.randomUUID(), 
       timestamp: Date.now(), 
@@ -204,6 +217,10 @@ const App: React.FC = () => {
     };
     setRecords(prev => [...prev, newRecord]);
   };
+
+  const lowStockProducts = useMemo(() => {
+    return posProducts.filter(p => p.stockQuantity <= p.minStockLevel);
+  }, [posProducts]);
 
   const themes = {
     dashboard: { bg: 'bg-blue-50', header: 'bg-blue-600', text: 'text-blue-600', nav: 'text-blue-600', accent: 'bg-blue-600' },
@@ -217,7 +234,6 @@ const App: React.FC = () => {
 
   return (
     <div className={`max-w-md mx-auto min-h-screen h-screen ${currentTheme.bg} flex flex-col relative overflow-hidden transition-colors duration-500`}>
-      {/* Background Decor */}
       <div className="absolute inset-0 opacity-[0.03] pointer-events-none z-0">
         <div className="absolute top-10 -left-10 w-64 h-64 border-[40px] border-black rounded-full"></div>
       </div>
@@ -250,6 +266,17 @@ const App: React.FC = () => {
           </div>
         )}
 
+        {/* Low Stock Alert - Floating badge for Grandma */}
+        {lowStockProducts.length > 0 && activeTab === 'dashboard' && (
+          <div className="mb-4 bg-red-50 border-2 border-red-100 p-4 rounded-[30px] flex items-center gap-4 animate-bounce-slow">
+            <div className="bg-red-500 text-white p-2 rounded-full"><AlertTriangle size={20}/></div>
+            <div className="flex-1">
+              <p className="text-xs font-black text-red-700">ยายจ๋า ของใกล้หมด {lowStockProducts.length} อย่างนะจ๊ะ</p>
+              <p className="text-[10px] font-bold text-red-500 italic">กดดูที่หลังร้านได้เลยจ้ะ</p>
+            </div>
+          </div>
+        )}
+
         {/* Quota Error Modal */}
         {showQuotaError && (
           <div className="fixed inset-0 z-[3000] bg-black/90 backdrop-blur-2xl flex items-center justify-center p-8">
@@ -259,193 +286,50 @@ const App: React.FC = () => {
               </div>
               <div className="space-y-2">
                 <h3 className="text-2xl font-black text-gray-800">โควต้าวันนี้หมดจ้ะ!</h3>
-                <p className="text-gray-500 font-bold leading-relaxed">
-                  ยายจ๋า ระบบฟรีมันจำกัดสแกนแค่ 20 ครั้งต่อวันจ้ะ ตอนนี้มันครบแล้ว 
-                  ยายต้องใช้ **"กุญแจส่วนตัว"** ถึงจะสแกนต่อได้นะจ๊ะ
-                </p>
+                <p className="text-gray-500 font-bold leading-relaxed">ยายจ๋า ระบบฟรีมันจำกัดสแกนแค่ 20 ครั้งต่อวันจ้ะ ตอนนี้มันครบแล้ว ยายต้องใช้กุญแจส่วนตัวถึงจะสแกนต่อได้นะจ๊ะ</p>
               </div>
-              <div className="space-y-3">
-                <button 
-                  onClick={handleOpenKeySelector}
-                  className="w-full bg-blue-600 text-white py-5 rounded-[30px] font-black text-lg flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"
-                >
-                  <Key size={24} /> ใช้กุญแจของฉันเอง
-                </button>
-                <button 
-                  onClick={() => setShowQuotaError(false)}
-                  className="w-full text-gray-400 font-black text-sm py-2"
-                >
-                  ไว้พรุ่งนี้ค่อยสแกนใหม่จ้ะ
-                </button>
-              </div>
-              <p className="text-[10px] text-gray-300 font-bold leading-tight">
-                * การใช้กุญแจส่วนตัว ยายต้องมีโปรเจกต์แบบจ่ายเงิน (Billing) ใน Google Cloud นะจ๊ะ
-              </p>
+              <button onClick={handleOpenKeySelector} className="w-full bg-blue-600 text-white py-5 rounded-[30px] font-black text-lg flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"><Key size={24} /> ใช้กุญแจส่วนตัว</button>
             </div>
           </div>
         )}
 
-        {/* Review Modal with Enhanced UI */}
+        {/* Review Modal */}
         {pendingRecord && (
           <div className="fixed inset-0 z-[2000] bg-black/95 backdrop-blur-2xl flex flex-col p-4 overflow-y-auto">
             <div className="bg-white w-full max-w-md rounded-[50px] p-6 space-y-6 shadow-2xl my-auto mx-auto relative flex flex-col max-h-[95vh] animate-in zoom-in duration-300">
-              
-              {/* Image Preview Toggle - Always show small first */}
-              {lastCapturedImage && (
-                <div className="relative shrink-0">
-                  <div 
-                    className={`w-full overflow-hidden rounded-[30px] border-4 border-blue-50 transition-all cursor-pointer ${showImagePreview ? 'h-80' : 'h-20'}`}
-                    onClick={() => setShowImagePreview(!showImagePreview)}
-                  >
+              <div className="shrink-0">
+                {lastCapturedImage && (
+                  <div className={`w-full overflow-hidden rounded-[30px] border-4 border-blue-50 transition-all cursor-pointer mb-4 ${showImagePreview ? 'h-64' : 'h-16'}`} onClick={() => setShowImagePreview(!showImagePreview)}>
                     <img src={lastCapturedImage} className={`w-full ${showImagePreview ? 'h-full object-contain' : 'h-full object-cover opacity-50'}`} />
-                    {!showImagePreview && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/30 text-white font-black text-sm gap-2">
-                         <Eye size={20} /> แตะที่นี่เพื่อดูรูปบิลจ้ะ
-                      </div>
-                    )}
+                    {!showImagePreview && <div className="absolute inset-0 flex items-center justify-center text-blue-600 font-black text-[10px] uppercase">แตะดูรูปบิล</div>}
                   </div>
-                  {showImagePreview && (
-                    <button onClick={() => setShowImagePreview(false)} className="absolute top-2 right-2 bg-black/50 text-white p-2 rounded-full"><X size={20}/></button>
-                  )}
+                )}
+                <div className="text-center space-y-1">
+                  <h3 className="text-2xl font-black text-gray-800">ลงของเรียบร้อยจ้ะ</h3>
+                  <p className="text-[11px] font-bold text-gray-400 uppercase">ตรวจรายการให้ยายหน่อยนะจ๊ะ</p>
                 </div>
-              )}
-
-              <div className="text-center space-y-1 shrink-0">
-                <h3 className="text-2xl font-black text-gray-800">ตรวจสอบข้อมูลจ้ะ</h3>
-                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest italic">จิ้มแก้ไขที่ช่องได้เลยนะจ๊ะยาย</p>
               </div>
 
-              {/* Category Picker */}
-              <div className="flex gap-2 justify-center shrink-0">
-                {[
-                  { id: Category.ICE, label: 'น้ำแข็ง', color: 'bg-blue-600' },
-                  { id: Category.BEVERAGE, label: 'เครื่องดื่ม', color: 'bg-green-600' },
-                  { id: Category.OTHERS, label: 'อื่นๆ', color: 'bg-gray-600' }
-                ].map(cat => (
-                  <button 
-                    key={cat.id} 
-                    onClick={() => setPendingRecord({...pendingRecord, category: cat.id})}
-                    className={`px-5 py-2.5 rounded-full text-[11px] font-black uppercase transition-all ${pendingRecord.category === cat.id ? `${cat.color} text-white scale-110 shadow-lg` : 'bg-gray-100 text-gray-400'}`}
-                  >
-                    {cat.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Items List - Robust and clear */}
-              <div className="flex-1 overflow-y-auto space-y-4 pr-1 no-scrollbar min-h-[200px]">
-                <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest flex items-center gap-2 sticky top-0 bg-white py-1">
-                  <Tag size={12} /> รายการที่อ่านได้
-                </p>
+              <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar min-h-[150px]">
                 {pendingRecord.items.map((item: any, idx: number) => (
-                  <div key={idx} className="bg-gray-50 p-5 rounded-[35px] border border-gray-100 space-y-4 relative animate-in slide-in-from-right duration-300">
-                    <button 
-                      onClick={() => setPendingRecord({...pendingRecord, items: pendingRecord.items.filter((_:any, i:number) => i !== idx)})}
-                      className="absolute -top-2 -right-2 bg-red-100 text-red-500 p-2 rounded-full shadow-md active:scale-90"
-                    >
-                      <Trash2 size={16} strokeWidth={3} />
-                    </button>
-                    <div className="space-y-1">
-                       <label className="text-[9px] font-black text-gray-400 uppercase ml-3">ชื่อสินค้า</label>
-                       <input 
-                         value={item.name} 
-                         onChange={e => {
-                           const newItems = [...pendingRecord.items];
-                           newItems[idx].name = e.target.value;
-                           setPendingRecord({...pendingRecord, items: newItems});
-                         }}
-                         className="w-full bg-white px-5 py-3 rounded-2xl text-base font-black border border-gray-200 shadow-sm focus:border-blue-500 outline-none"
-                         placeholder="ยายจ๋า... ของชื่ออะไรจ๊ะ?"
-                       />
-                    </div>
+                  <div key={idx} className="bg-gray-50 p-5 rounded-[35px] border border-gray-100 space-y-4 relative">
+                    <button onClick={() => setPendingRecord({...pendingRecord, items: pendingRecord.items.filter((_:any, i:number) => i !== idx)})} className="absolute -top-2 -right-2 bg-red-100 text-red-500 p-2 rounded-full shadow-md"><Trash2 size={16}/></button>
+                    <input value={item.name} onChange={e => {const n=[...pendingRecord.items]; n[idx].name=e.target.value; setPendingRecord({...pendingRecord, items:n});}} className="w-full bg-white px-5 py-3 rounded-2xl text-base font-black border border-gray-200 outline-none" />
                     <div className="grid grid-cols-2 gap-4">
-                       <div className="space-y-1">
-                         <label className="text-[9px] font-black text-gray-400 uppercase ml-3">จำนวน</label>
-                         <input 
-                           type="number"
-                           value={item.quantity} 
-                           onChange={e => {
-                             const newItems = [...pendingRecord.items];
-                             newItems[idx].quantity = parseInt(e.target.value) || 0;
-                             setPendingRecord({...pendingRecord, items: newItems});
-                           }}
-                           className="w-full bg-white px-4 py-3 rounded-2xl text-lg font-black text-center border border-gray-200 shadow-sm"
-                         />
-                       </div>
-                       <div className="space-y-1">
-                         <label className="text-[9px] font-black text-blue-500 uppercase ml-3">ราคารวม</label>
-                         <input 
-                           type="number"
-                           value={item.totalPrice} 
-                           onChange={e => {
-                             const newItems = [...pendingRecord.items];
-                             newItems[idx].totalPrice = parseFloat(e.target.value) || 0;
-                             setPendingRecord({...pendingRecord, items: newItems});
-                           }}
-                           className="w-full bg-blue-50 px-5 py-3 rounded-2xl text-2xl font-black text-right text-blue-700 border border-blue-100 shadow-sm"
-                         />
-                       </div>
+                       <input type="number" value={item.quantity} onChange={e => {const n=[...pendingRecord.items]; n[idx].quantity=parseInt(e.target.value)||0; setPendingRecord({...pendingRecord, items:n});}} className="w-full bg-white px-4 py-3 rounded-2xl text-lg font-black text-center" />
+                       <input type="number" value={item.totalPrice} onChange={e => {const n=[...pendingRecord.items]; n[idx].totalPrice=parseFloat(e.target.value)||0; setPendingRecord({...pendingRecord, items:n});}} className="w-full bg-blue-50 px-5 py-3 rounded-2xl text-xl font-black text-right text-blue-700" />
                     </div>
                   </div>
                 ))}
-                
-                <button 
-                  onClick={() => setPendingRecord({...pendingRecord, items: [...pendingRecord.items, { name: '', quantity: 1, unitPrice: 0, totalPrice: 0 }]})}
-                  className="w-full py-6 rounded-[35px] border-4 border-dashed border-gray-100 text-gray-400 font-black text-sm flex items-center justify-center gap-3 active:scale-95 hover:bg-gray-50 transition-all"
-                >
-                  <Plus size={24} strokeWidth={4} /> ยายอยากเพิ่มรายการเองจ้ะ
-                </button>
               </div>
 
-              {/* Ice Metrics - Only for ICE */}
-              {pendingRecord.category === Category.ICE && (
-                <div className="bg-blue-50 p-5 rounded-[35px] space-y-4 border-2 border-blue-100 shrink-0">
-                  <h4 className="font-black text-blue-700 text-[11px] flex items-center gap-2 uppercase tracking-widest">
-                    <Package size={16} /> บันทึกยอดกระสอบน้ำแข็ง
-                  </h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-[9px] font-black text-gray-500 uppercase ml-3">มาส่ง (ถุง)</label>
-                      <div className="flex items-center gap-2 bg-white p-3 rounded-2xl shadow-sm border border-blue-100">
-                        <button onClick={() => setPendingRecord({...pendingRecord, iceMetrics: {...pendingRecord.iceMetrics, delivered: Math.max(0, pendingRecord.iceMetrics.delivered - 1)}})} className="p-2 text-blue-600 active:scale-90"><Minus size={18} strokeWidth={4}/></button>
-                        <span className="flex-1 text-center font-black text-2xl text-blue-700">{pendingRecord.iceMetrics.delivered}</span>
-                        <button onClick={() => setPendingRecord({...pendingRecord, iceMetrics: {...pendingRecord.iceMetrics, delivered: pendingRecord.iceMetrics.delivered + 1}})} className="p-2 text-blue-600 active:scale-90"><Plus size={18} strokeWidth={4}/></button>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[9px] font-black text-gray-500 uppercase ml-3">คืนถุง (ถุง)</label>
-                      <div className="flex items-center gap-2 bg-white p-3 rounded-2xl shadow-sm border border-orange-100">
-                        <button onClick={() => setPendingRecord({...pendingRecord, iceMetrics: {...pendingRecord.iceMetrics, returned: Math.max(0, pendingRecord.iceMetrics.returned - 1)}})} className="p-2 text-orange-500 active:scale-90"><Minus size={18} strokeWidth={4}/></button>
-                        <span className="flex-1 text-center font-black text-2xl text-orange-600">{pendingRecord.iceMetrics.returned}</span>
-                        <button onClick={() => setPendingRecord({...pendingRecord, iceMetrics: {...pendingRecord.iceMetrics, returned: pendingRecord.iceMetrics.returned + 1}})} className="p-2 text-orange-500 active:scale-90"><Plus size={18} strokeWidth={4}/></button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Summary and Actions */}
               <div className="space-y-4 pt-4 border-t border-gray-100 shrink-0">
                 <div className="flex justify-between items-center bg-gray-900 text-white p-6 rounded-[35px] shadow-2xl">
-                   <div className="flex items-center gap-3">
-                     <Coins size={24} className="text-yellow-400" />
-                     <span className="text-xs font-black uppercase opacity-60 tracking-widest">ยอดเงินรวม</span>
-                   </div>
-                   <span className="text-3xl font-black">฿{pendingTotal.toLocaleString()}</span>
+                   <span className="text-xs font-black uppercase opacity-60">ยอดลงทุนรวม</span>
+                   <span className="text-3xl font-black">฿{pendingRecord.items.reduce((a:number, b:any)=>a+(parseFloat(b.totalPrice)||0), 0).toLocaleString()}</span>
                 </div>
-                <div className="flex flex-col gap-3">
-                  <button onClick={saveConfirmedRecord} className="w-full bg-blue-600 text-white py-7 rounded-[40px] font-black text-2xl shadow-xl active:scale-95 flex items-center justify-center gap-4">
-                    <Check size={36} strokeWidth={5} /> บันทึกเลยจ้ะยาย
-                  </button>
-                  <div className="flex gap-2">
-                    <button onClick={() => setIsCameraOpen(true)} className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-2xl font-black text-xs flex items-center justify-center gap-2 active:scale-95">
-                      <RotateCw size={14}/> สแกนใหม่อีกที
-                    </button>
-                    <button onClick={() => {setPendingRecord(null); setLastCapturedImage(null);}} className="flex-1 text-gray-400 font-black text-xs py-3 border border-gray-100 rounded-2xl">
-                      ยกเลิกบิลนี้
-                    </button>
-                  </div>
-                </div>
+                <button onClick={saveConfirmedRecord} className="w-full bg-blue-600 text-white py-7 rounded-[40px] font-black text-2xl shadow-xl active:scale-95">บันทึกและเพิ่มสต๊อกจ้ะ</button>
+                <button onClick={() => setPendingRecord(null)} className="w-full text-gray-400 font-black text-xs">ยกเลิก</button>
               </div>
             </div>
           </div>

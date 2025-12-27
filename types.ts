@@ -65,5 +65,7 @@ export interface PosProduct {
   price: number;
   costPrice: number;
   imageUrl?: string;
-  isRetailProduct?: boolean; // เปลี่ยนจาก isQuickSelect เป็น isRetailProduct
+  isRetailProduct?: boolean;
+  stockQuantity: number;    // จำนวนคงเหลือปัจจุบัน
+  minStockLevel: number;    // จุดที่ต้องเตือนว่าของน้อย
 }

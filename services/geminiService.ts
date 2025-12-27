@@ -100,6 +100,40 @@ export const testAiConnection = async () => {
   }
 };
 
+/**
+ * ฟังก์ชันช่วยปรับแต่งคำพูดตามบุคลิกที่เลือก
+ */
+const formatPersonaText = (text: string, persona: AiPersona): string => {
+  let t = text.trim();
+  
+  // ลบคำลงท้ายเดิมๆ ออกก่อนเพื่อไม่ให้ซ้ำซ้อน
+  t = t.replace(/[ครับ|ค่ะ|จ้ะ|นะจ๊ะ|จ๋า|คะ|ขะ|นะ]+$/, "");
+
+  switch (persona) {
+    case 'GIRLFRIEND':
+      // แฟนสาวขี้อ้อน: อ้อนด้วย "จ้ะ/จ๋า" และลงท้าย "ที่รัก"
+      return `${t}นะจ๊ะที่รักจ๋า`;
+    
+    case 'GRANDMA':
+      // คุณยายใจดี: สุภาพแบบโบราณ
+      if (!t.startsWith("ยาย") && !t.includes("ยาย")) {
+        return `ยายจ๋า ${t}จ้ะ`;
+      }
+      return `${t}จ้ะ`;
+    
+    case 'BOYFRIEND':
+      // แฟนหนุ่ม: อบอุ่น สุภาพ
+      return `${t}นะครับเตง`;
+    
+    case 'PROFESSIONAL':
+      // มือโปร: ชัดเจน สั้นกระชับ
+      return `${t}เรียบร้อยแล้วค่ะ`;
+    
+    default:
+      return t;
+  }
+};
+
 export const processReceiptImage = async (base64Image: string) => {
   if (!isApiKeyReady()) throw new Error("MISSING_KEY");
   try {
@@ -182,17 +216,20 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA'): P
   try {
     const ai = new GoogleGenAI({ apiKey: getApiKey() });
     
-    // ปรับการเลือกเสียง (Gemini Preview เสียงผู้หญิงค่อนข้างน้อย หลานพยายามเลือกโทนที่เหมาะสมที่สุด)
+    // ปรับการเลือกเสียง
     const voiceMap: Record<AiPersona, string> = { 
-      'GRANDMA': 'Puck', // เสียงนุ่ม สุภาพ
-      'GIRLFRIEND': 'Kore', // เสียงที่โทนสูงและแบนกว่าปกติเล็กน้อย
-      'BOYFRIEND': 'Charon', // เสียงทุ้มเข้ม
-      'PROFESSIONAL': 'Zephyr' // เสียงชัดเจน เป็นการเป็นงาน
+      'GRANDMA': 'Puck', 
+      'GIRLFRIEND': 'Kore', // เสียงผู้หญิงที่โทนแหลมและดูเด็กกว่า
+      'BOYFRIEND': 'Charon', 
+      'PROFESSIONAL': 'Zephyr' 
     };
+
+    // แปลงคำพูดตามบุคลิกก่อนส่งไปสังเคราะห์เสียง
+    const formattedText = formatPersonaText(text, persona);
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text }] }],
+      contents: [{ parts: [{ text: formattedText }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceMap[persona] || 'Puck' } } },
