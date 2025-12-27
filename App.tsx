@@ -231,14 +231,7 @@ const App: React.FC = () => {
   const handleTabChange = async (tab: any) => {
     await initAudio();
     setActiveTab(tab);
-    const labels: Record<string, string> = {
-      dashboard: "ดูภาพรวมร้านนะจ๊ะ",
-      history: "ดูประวัติการขายจ้ะ",
-      pos: "เปิดร้านขายของแล้วจ้ะ",
-      manage: "เข้ามาจัดการหลังร้านจ้ะ",
-      sync: "ตั้งค่าระบบนะจ๊ะ"
-    };
-    speakText(labels[tab], persona);
+    // ลบการพูดชื่อหน้าออกเพื่อลดความรำคาญ
   };
 
   return (
@@ -331,7 +324,7 @@ const App: React.FC = () => {
         {activeTab === 'dashboard' && <Dashboard 
           stats={stats} records={records} currentIceBalance={currentIceBalance} ownerPhoto={ownerPhoto}
           onOpenTopUp={async () => { await initAudio(); setAiCredits(prev => prev + 50); speakText("เติมเหรียญให้แล้วนะจ๊ะ", persona); }} 
-          onStartScan={async () => { await initAudio(); setIsCameraOpen(true); speakText("เปิดกล้องสแกนบิลสินค้าจ้ะ", persona); }}
+          onStartScan={async () => { await initAudio(); setIsCameraOpen(true); }}
           onStartSale={async () => handleTabChange('pos')} 
           onOpenManage={async () => handleTabChange('manage')}
           hideSensitiveData={syncConfig.role === 'STAFF'} 
@@ -369,7 +362,7 @@ const App: React.FC = () => {
         </nav>
       )}
 
-      {isCameraOpen && <CameraUploader onCapture={handleCapture} onCancel={() => { setIsCameraOpen(false); speakText("ปิดกล้องแล้วจ้ะ", persona); }} />}
+      {isCameraOpen && <CameraUploader onCapture={handleCapture} onCancel={() => { setIsCameraOpen(false); }} />}
     </div>
   );
 };

@@ -93,7 +93,7 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
         setIsScanning(false);
         return;
       }
-      speakText(`เจอ ${product.name} แล้วจ้ะ จะเอากี่ชิ้นดี`, persona);
+      // ไม่ต้องพูดตอนสแกน แต่รอพูดตอนใส่จำนวน
       setPendingProduct(product);
       setInputQty('1');
     } catch (err) {
@@ -109,7 +109,7 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
       if (existing) return prev.map(item => item.product.id === product.id ? { ...item, qty: item.qty + qty } : item);
       return [...prev, { product, qty }];
     });
-    // แก้ไข: ให้พูดจำนวนที่ถูกต้อง
+    // พูดยืนยันจำนวนที่หยิบใส่ตะกร้าจริง
     speakText(`หยิบ ${product.name} จำนวน ${qty} ชิ้น ใส่ตะกร้าแล้วนะจ๊ะ`, persona);
   };
 
@@ -128,12 +128,12 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
     setCart([]);
     setCashReceived('');
     
+    // พูดสรุปยอดเงินและเงินทอนให้ชัดเจน
     speakText(`คิดเงินจบการขายเรียบร้อยจ้ะ ยอดรวม ${currentTotal} บาท รับมา ${currentReceived} บาท ทอนเงิน ${currentChange} บาทนะจ๊ะ`, persona);
   };
 
   const closeSummary = () => {
     setSaleSummary(null);
-    speakText("รับทราบจ้ะ พร้อมขายรายการถัดไปแล้วนะจ๊ะ", persona);
   };
 
   return (
@@ -142,7 +142,7 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
       <div className="bg-white p-4 border-b border-gray-100 shadow-sm sticky top-0 z-20 flex flex-col gap-2 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <button onClick={() => { onGoBack(); speakText("กลับหน้าหลักแล้วนะจ๊ะ", persona); }} className="p-2 -ml-2 text-gray-400"><ArrowLeft/></button>
+            <button onClick={() => { onGoBack(); }} className="p-2 -ml-2 text-gray-400"><ArrowLeft/></button>
             <ShoppingCart className="text-blue-600" size={20}/>
             <h3 className="text-base font-black text-gray-800">ตะกร้าของยาย</h3>
           </div>
@@ -164,9 +164,9 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
       {/* Main Actions */}
       <div className="flex-1 p-6 flex flex-col items-center justify-center gap-6">
         <div className="w-full space-y-4 max-w-sm">
-          <button onClick={() => { setIsScanning(true); speakText("เปิดกล้องสแกนสินค้าจ้ะ", persona); }} className="w-full bg-blue-600 text-white py-12 rounded-[50px] font-black text-3xl flex flex-col items-center justify-center gap-4 shadow-[0_20px_40px_rgba(37,99,235,0.3)] active:scale-95 transition-all"><Camera size={64} /><span>สแกนสินค้า</span></button>
-          <button onClick={() => { setShowRetailSelector(true); speakText("เลือกสินค้าขายย่อยจากรายการนะจ๊ะ", persona); }} className="w-full bg-orange-500 text-white py-8 rounded-[50px] font-black text-xl flex items-center justify-center gap-4 shadow-lg active:scale-95 transition-all"><ListFilter size={28} /> เลือกสินค้าขายย่อย</button>
-          {cart.length > 0 && <button onClick={() => { setShowCheckout(true); speakText(`ยอดรวมทั้งหมด ${total} บาทจ้ะ รับเงินมาเท่าไหร่จ๊ะ`, persona); }} className="w-full bg-green-500 text-white py-8 rounded-[50px] font-black text-2xl flex items-center justify-center gap-4 shadow-xl active:scale-95 transition-all"><CheckCircle2 size={36} /> คิดเงินจบการขาย</button>}
+          <button onClick={() => { setIsScanning(true); }} className="w-full bg-blue-600 text-white py-12 rounded-[50px] font-black text-3xl flex flex-col items-center justify-center gap-4 shadow-[0_20px_40px_rgba(37,99,235,0.3)] active:scale-95 transition-all"><Camera size={64} /><span>สแกนสินค้า</span></button>
+          <button onClick={() => { setShowRetailSelector(true); }} className="w-full bg-orange-500 text-white py-8 rounded-[50px] font-black text-xl flex items-center justify-center gap-4 shadow-lg active:scale-95 transition-all"><ListFilter size={28} /> เลือกสินค้าขายย่อย</button>
+          {cart.length > 0 && <button onClick={() => { setShowCheckout(true); speakText(`ยอดรวมทั้งหมด ${total} บาทจ้ะ`, persona); }} className="w-full bg-green-500 text-white py-8 rounded-[50px] font-black text-2xl flex items-center justify-center gap-4 shadow-xl active:scale-95 transition-all"><CheckCircle2 size={36} /> คิดเงินจบการขาย</button>}
         </div>
       </div>
 
@@ -177,7 +177,7 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
             <div className="p-6 border-b border-gray-100 flex justify-between items-center"><div className="flex items-center gap-2"><Zap className="text-orange-500" fill="currentColor"/><h3 className="font-black text-xl text-gray-800">สินค้าขายย่อย</h3></div><button onClick={() => setShowRetailSelector(false)} className="bg-gray-100 p-2 rounded-full"><X/></button></div>
             <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-3 no-scrollbar">
               {retailProducts.length > 0 ? retailProducts.map(p => (
-                <button key={p.id} onClick={() => { addToCart(p); setShowRetailSelector(false); }} className="bg-orange-50 border-2 border-orange-100 p-4 rounded-[30px] flex flex-col gap-1 active:scale-95 transition-all text-left">
+                <button key={p.id} onClick={() => { addToCart(p, 1); setShowRetailSelector(false); }} className="bg-orange-50 border-2 border-orange-100 p-4 rounded-[30px] flex flex-col gap-1 active:scale-95 transition-all text-left">
                   <p className="font-black text-orange-800 text-xs truncate">{p.name}</p>
                   <p className="font-black text-orange-600 text-lg">฿{p.price}</p>
                 </button>
@@ -219,13 +219,13 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
 
              <div className="space-y-3">
                <button onClick={handleCompleteSale} className="w-full bg-green-500 text-white py-8 rounded-[40px] font-black text-2xl shadow-xl active:scale-95 transition-all">ยืนยันการขายจ้ะ</button>
-               <button onClick={() => { setShowCheckout(false); speakText("ยกเลิกการคิดเงินแล้วจ้ะ", persona); }} className="w-full text-gray-400 font-black text-xs">กลับไปแก้ไข</button>
+               <button onClick={() => { setShowCheckout(false); }} className="w-full text-gray-400 font-black text-xs">กลับไปแก้ไข</button>
              </div>
           </div>
         </div>
       )}
 
-      {/* Sale Summary Receipt Modal (NEW) */}
+      {/* Sale Summary Receipt Modal */}
       {saleSummary && (
         <div className="fixed inset-0 z-[4000] bg-blue-600 flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-sm rounded-[60px] p-10 space-y-8 shadow-2xl text-center relative overflow-hidden animate-in zoom-in duration-500">
@@ -264,7 +264,7 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
       {/* Camera Scanning View */}
       {isScanning && (
         <div className="fixed inset-0 z-[2000] bg-black flex flex-col">
-          <div className="p-6 absolute top-0 left-0 right-0 z-[2010] flex justify-between items-center text-white"><button onClick={() => { setIsScanning(false); speakText("ปิดกล้องแล้วนะจ๊ะ", persona); }} className="bg-white/20 p-4 rounded-full"><X size={32}/></button><div className="bg-blue-600 px-6 py-2 rounded-full font-black">฿{total}</div></div>
+          <div className="p-6 absolute top-0 left-0 right-0 z-[2010] flex justify-between items-center text-white"><button onClick={() => { setIsScanning(false); }} className="bg-white/20 p-4 rounded-full"><X size={32}/></button><div className="bg-blue-600 px-6 py-2 rounded-full font-black">฿{total}</div></div>
           <video ref={videoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
           <div className="absolute inset-0 flex items-center justify-center p-12 pointer-events-none"><div className="w-full aspect-square border-4 border-white/30 border-dashed rounded-[60px] shadow-[0_0_0_1000px_rgba(0,0,0,0.6)]"></div></div>
           <div className="absolute bottom-20 left-0 right-0 flex justify-center z-[2020]">
@@ -291,7 +291,7 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
               />
             </div>
             <button onClick={() => { addToCart(pendingProduct, parseInt(inputQty) || 1); setPendingProduct(null); }} className="w-full bg-blue-600 text-white py-7 rounded-3xl font-black text-2xl shadow-lg active:scale-95">ใส่ตะกร้าจ้ะ</button>
-            <button onClick={() => { setPendingProduct(null); speakText("ยกเลิกรายการนี้แล้วจ้ะ", persona); }} className="w-full text-gray-400 font-black text-xs uppercase tracking-widest">ยกเลิก</button>
+            <button onClick={() => { setPendingProduct(null); }} className="w-full text-gray-400 font-black text-xs uppercase tracking-widest">ยกเลิก</button>
           </div>
         </div>
       )}

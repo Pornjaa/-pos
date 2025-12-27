@@ -34,7 +34,6 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onSave, onDel
     if (prefillData) {
       setProductName(prefillData.name);
       setView('add');
-      speakText("ยายจ๋า มีของมาใหม่เหรอ ใส่ราคาและสต๊อกให้หน่อยนะ", persona);
     }
   }, [prefillData]);
 
@@ -66,7 +65,7 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onSave, onDel
       minStockLevel: parseInt(minStockLevel) || 5
     });
     setProductName(''); setCostPrice(''); setSellingPrice(''); setStockQuantity('0'); setMinStockLevel('5'); setProductImageUrl(null); setIsRetailProduct(false);
-    speakText("จดลงสมุดและตั้งสต๊อกให้เรียบร้อยแล้วจ้ะ", persona);
+    speakText("จดลงสมุดสต๊อกให้เรียบร้อยแล้วจ้ะ", persona);
     setView('list');
   };
 
@@ -158,7 +157,6 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onSave, onDel
         <div className="fixed inset-0 z-[2000] bg-black flex flex-col">
           <div className="p-8 absolute top-0 left-0 right-0 z-[2010] text-white flex justify-between"><button onClick={() => setIsCapturingProduct(false)} className="bg-white/20 p-4 rounded-full"><X/></button></div>
           <video ref={videoRef} autoPlay playsInline className="flex-1 object-cover" />
-          {/* ขยับปุ่มชัตเตอร์ให้ลอยสูงขึ้นมาจากขอบจอป้องกันการโดนบัง */}
           <div className="p-12 pb-20 flex justify-center bg-black relative z-[2020]">
             {isProcessing ? <Loader2 className="animate-spin text-white w-16 h-16" /> : 
             <button onClick={handleCaptureAndRecognize} className="w-24 h-24 bg-white rounded-full border-[10px] border-gray-100 flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.3)] active:scale-90 transition-transform"><Camera size={48} className="text-blue-600" /></button>}
