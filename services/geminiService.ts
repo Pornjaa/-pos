@@ -2,7 +2,7 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Category, AiPersona } from "../types";
 
-const getAi = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
+const getAi = () => new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 let audioCtx: AudioContext | null = null;
 
 const cleanJsonResponse = (text: string) => {
@@ -113,7 +113,12 @@ export const generateMascot = async () => {
     }
   });
 
-  for (const part of response.candidates[0].content.parts) {
+  const candidates = response?.candidates;
+  if (!candidates || candidates.length === 0 || !candidates[0]?.content?.parts) {
+    throw new Error("สร้างรูปไม่สำเร็จจ้ะ");
+  }
+
+  for (const part of candidates[0].content.parts) {
     if (part.inlineData) {
       return `data:image/png;base64,${part.inlineData.data}`;
     }
@@ -157,7 +162,8 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
       },
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    const candidates = response?.candidates;
+    const base64Audio = candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (base64Audio) {
       if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       
@@ -166,14 +172,16 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
       for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
       
       const dataInt16 = new Int16Array(bytes.buffer);
-      const buffer = audioCtx.createBuffer(1, dataInt16.length, 24000);
-      const channelData = buffer.getChannelData(0);
-      for (let i = 0; i < dataInt16.length; i++) channelData[i] = dataInt16[i] / 32768.0;
-      
-      const source = audioCtx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(audioCtx.destination);
-      source.start();
+      if (audioCtx) {
+        const buffer = audioCtx.createBuffer(1, dataInt16.length, 24000);
+        const channelData = buffer.getChannelData(0);
+        for (let i = 0; i < dataInt16.length; i++) channelData[i] = dataInt16[i] / 32768.0;
+        
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioCtx.destination);
+        source.start();
+      }
     }
   } catch (e) { 
     console.error("TTS Error:", e);

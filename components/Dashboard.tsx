@@ -2,7 +2,7 @@
 import React from 'react';
 import { InventoryRecord, SummaryStats, Category } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { TrendingUp, Package, Droplets, Calendar, CreditCard, Zap, PlusCircle, Camera, Store, Shield, Sparkles, User, Settings, ArrowRight } from 'lucide-react';
+import { TrendingUp, Package, Droplets, CreditCard, Zap, PlusCircle, Camera, Store, Shield, Sparkles, User, Settings, ArrowRight } from 'lucide-react';
 
 interface DashboardProps {
   records: InventoryRecord[];
@@ -16,10 +16,11 @@ interface DashboardProps {
   hideSensitiveData?: boolean;
 }
 
-const COLORS = {
+const COLORS: Record<Category, string> = {
   [Category.ICE]: '#3b82f6',
   [Category.BEVERAGE]: '#10b981',
   [Category.OTHERS]: '#f59e0b',
+  [Category.SALE]: '#10b981',
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ stats, currentIceBalance, ownerPhoto, onOpenTopUp, onStartScan, onStartSale, onOpenManage, hideSensitiveData }) => {
