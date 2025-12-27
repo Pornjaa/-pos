@@ -39,6 +39,7 @@ const App: React.FC = () => {
   });
   
   const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [isInternalScanning, setIsInternalScanning] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [pendingRecord, setPendingRecord] = useState<any | null>(null);
   const [lastCapturedImage, setLastCapturedImage] = useState<string | null>(null);
@@ -113,13 +114,11 @@ const App: React.FC = () => {
     setIsCameraOpen(false);
     setLastCapturedImage(`data:image/jpeg;base64,${base64}`);
     await initAudio();
-
     setIsProcessing(true);
     setPendingRecord(null);
 
     try {
       const data = await processReceiptImage(base64);
-      
       const finalItems = data.items && data.items.length > 0 
         ? data.items 
         : [{ name: 'รายการจากบิล', quantity: 1, unitPrice: 0, totalPrice: 0 }];
@@ -136,7 +135,7 @@ const App: React.FC = () => {
     } catch (err: any) { 
       if (err.message === 'QUOTA_EXCEEDED') {
         setShowQuotaError(true);
-        speakText("ยายจ๋า โควต้าสแกนวันนี้หมดแล้วจ้ะ ต้องใส่กุญแจส่วนตัวถึงจะใช้ต่อได้นะ", persona);
+        speakText("ยายจ๋า โควต้าสแกนวันนี้หมดแล้วจ้ะ", persona);
       } else {
         speakText("ยายจ๋า บิลนี้อ่านยากจัง ลองพิมพ์เองสักหน่อยนะจ๊ะ", persona); 
         setPendingRecord({
@@ -167,7 +166,6 @@ const App: React.FC = () => {
     const items = pendingRecord.items.filter((i: any) => i.name.trim() !== '');
     const total = items.reduce((a: number, b: any) => a + (parseFloat(b.totalPrice) || 0), 0);
     
-    // อัปเดตสต๊อกจากการลงของ
     setPosProducts(prev => prev.map(p => {
       const matchedItem = items.find((item: any) => item.name.toLowerCase().trim() === p.name.toLowerCase().trim());
       if (matchedItem) {
@@ -194,10 +192,7 @@ const App: React.FC = () => {
     setActiveTab('history');
   };
 
-  const handlePOSSale = async (items: any[], total: number) => {
-    await initAudio();
-    
-    // ตัดสต๊อกจากการขาย
+  const handlePOSSale = (items: any[], total: number) => {
     setPosProducts(prev => prev.map(p => {
       const soldItem = items.find(i => i.product.id === p.id);
       if (soldItem) {
@@ -231,6 +226,20 @@ const App: React.FC = () => {
   };
 
   const currentTheme = themes[activeTab];
+  const shouldHideNav = isCameraOpen || isInternalScanning;
+
+  const handleTabChange = async (tab: any) => {
+    await initAudio();
+    setActiveTab(tab);
+    const labels: Record<string, string> = {
+      dashboard: "ดูภาพรวมร้านนะจ๊ะ",
+      history: "ดูประวัติการขายจ้ะ",
+      pos: "เปิดร้านขายของแล้วจ้ะ",
+      manage: "เข้ามาจัดการหลังร้านจ้ะ",
+      sync: "ตั้งค่าระบบนะจ๊ะ"
+    };
+    speakText(labels[tab], persona);
+  };
 
   return (
     <div className={`max-w-md mx-auto min-h-screen h-screen ${currentTheme.bg} flex flex-col relative overflow-hidden transition-colors duration-500`}>
@@ -241,7 +250,7 @@ const App: React.FC = () => {
       {activeTab !== 'pos' && (
         <header className={`${currentTheme.header} p-4 pt-10 sticky top-0 z-30 flex justify-between items-center shadow-lg text-white`}>
           <div className="flex items-center gap-3">
-            <button onClick={() => setIsSystemOff(true)} className="p-2 bg-white/20 rounded-full"><Power size={20} /></button>
+            <button onClick={() => { setIsSystemOff(true); speakText("ปิดระบบแล้วนะจ๊ะยาย", persona); }} className="p-2 bg-white/20 rounded-full"><Power size={20} /></button>
             <h1 className="text-xl font-black tracking-tight">คุณยาย <span className="opacity-70">POS</span></h1>
           </div>
           <div className="flex items-center gap-3">
@@ -266,29 +275,13 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Low Stock Alert - Floating badge for Grandma */}
+        {/* Low Stock Alert */}
         {lowStockProducts.length > 0 && activeTab === 'dashboard' && (
           <div className="mb-4 bg-red-50 border-2 border-red-100 p-4 rounded-[30px] flex items-center gap-4 animate-bounce-slow">
             <div className="bg-red-500 text-white p-2 rounded-full"><AlertTriangle size={20}/></div>
             <div className="flex-1">
               <p className="text-xs font-black text-red-700">ยายจ๋า ของใกล้หมด {lowStockProducts.length} อย่างนะจ๊ะ</p>
               <p className="text-[10px] font-bold text-red-500 italic">กดดูที่หลังร้านได้เลยจ้ะ</p>
-            </div>
-          </div>
-        )}
-
-        {/* Quota Error Modal */}
-        {showQuotaError && (
-          <div className="fixed inset-0 z-[3000] bg-black/90 backdrop-blur-2xl flex items-center justify-center p-8">
-            <div className="bg-white w-full max-w-sm rounded-[50px] p-8 space-y-6 text-center shadow-2xl animate-in zoom-in duration-300">
-              <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto">
-                <ShieldAlert size={48} />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-2xl font-black text-gray-800">โควต้าวันนี้หมดจ้ะ!</h3>
-                <p className="text-gray-500 font-bold leading-relaxed">ยายจ๋า ระบบฟรีมันจำกัดสแกนแค่ 20 ครั้งต่อวันจ้ะ ตอนนี้มันครบแล้ว ยายต้องใช้กุญแจส่วนตัวถึงจะสแกนต่อได้นะจ๊ะ</p>
-              </div>
-              <button onClick={handleOpenKeySelector} className="w-full bg-blue-600 text-white py-5 rounded-[30px] font-black text-lg flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"><Key size={24} /> ใช้กุญแจส่วนตัว</button>
             </div>
           </div>
         )}
@@ -313,7 +306,7 @@ const App: React.FC = () => {
               <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar min-h-[150px]">
                 {pendingRecord.items.map((item: any, idx: number) => (
                   <div key={idx} className="bg-gray-50 p-5 rounded-[35px] border border-gray-100 space-y-4 relative">
-                    <button onClick={() => setPendingRecord({...pendingRecord, items: pendingRecord.items.filter((_:any, i:number) => i !== idx)})} className="absolute -top-2 -right-2 bg-red-100 text-red-500 p-2 rounded-full shadow-md"><Trash2 size={16}/></button>
+                    <button onClick={() => { setPendingRecord({...pendingRecord, items: pendingRecord.items.filter((_:any, i:number) => i !== idx)}); speakText("ลบรายการนี้แล้วจ้ะ", persona); }} className="absolute -top-2 -right-2 bg-red-100 text-red-500 p-2 rounded-full shadow-md"><Trash2 size={16}/></button>
                     <input value={item.name} onChange={e => {const n=[...pendingRecord.items]; n[idx].name=e.target.value; setPendingRecord({...pendingRecord, items:n});}} className="w-full bg-white px-5 py-3 rounded-2xl text-base font-black border border-gray-200 outline-none" />
                     <div className="grid grid-cols-2 gap-4">
                        <input type="number" value={item.quantity} onChange={e => {const n=[...pendingRecord.items]; n[idx].quantity=parseInt(e.target.value)||0; setPendingRecord({...pendingRecord, items:n});}} className="w-full bg-white px-4 py-3 rounded-2xl text-lg font-black text-center" />
@@ -329,7 +322,7 @@ const App: React.FC = () => {
                    <span className="text-3xl font-black">฿{pendingRecord.items.reduce((a:number, b:any)=>a+(parseFloat(b.totalPrice)||0), 0).toLocaleString()}</span>
                 </div>
                 <button onClick={saveConfirmedRecord} className="w-full bg-blue-600 text-white py-7 rounded-[40px] font-black text-2xl shadow-xl active:scale-95">บันทึกและเพิ่มสต๊อกจ้ะ</button>
-                <button onClick={() => setPendingRecord(null)} className="w-full text-gray-400 font-black text-xs">ยกเลิก</button>
+                <button onClick={() => { setPendingRecord(null); speakText("ยกเลิกการบันทึกบิลแล้วจ้ะ", persona); }} className="w-full text-gray-400 font-black text-xs">ยกเลิก</button>
               </div>
             </div>
           </div>
@@ -338,23 +331,23 @@ const App: React.FC = () => {
         {activeTab === 'dashboard' && <Dashboard 
           stats={stats} records={records} currentIceBalance={currentIceBalance} ownerPhoto={ownerPhoto}
           onOpenTopUp={async () => { await initAudio(); setAiCredits(prev => prev + 50); speakText("เติมเหรียญให้แล้วนะจ๊ะ", persona); }} 
-          onStartScan={async () => { await initAudio(); setIsCameraOpen(true); }}
-          onStartSale={async () => { await initAudio(); setActiveTab('pos'); }} 
-          onOpenManage={async () => { await initAudio(); setActiveTab('manage'); }}
+          onStartScan={async () => { await initAudio(); setIsCameraOpen(true); speakText("เปิดกล้องสแกนบิลสินค้าจ้ะ", persona); }}
+          onStartSale={async () => handleTabChange('pos')} 
+          onOpenManage={async () => handleTabChange('manage')}
           hideSensitiveData={syncConfig.role === 'STAFF'} 
         />}
-        {activeTab === 'history' && <HistoryList records={records} onDelete={id => setRecords(prev => prev.filter(r => r.id !== id))} canDelete={syncConfig.role === 'OWNER'} />}
-        {activeTab === 'pos' && <POSSystem products={posProducts} onSaleComplete={handlePOSSale} onGoBack={() => setActiveTab('dashboard')} onUnregisteredProduct={(n, b) => {setPrefillProduct({name:n, barcode:b}); setActiveTab('manage');}} persona={persona} />}
+        {activeTab === 'history' && <HistoryList records={records} onDelete={id => { setRecords(prev => prev.filter(r => r.id !== id)); speakText("ลบประวัติรายการนี้แล้วจ้ะ", persona); }} canDelete={syncConfig.role === 'OWNER'} />}
+        {activeTab === 'pos' && <POSSystem products={posProducts} onSaleComplete={handlePOSSale} onGoBack={() => handleTabChange('dashboard')} onUnregisteredProduct={(n, b) => {setPrefillProduct({name:n, barcode:b}); setActiveTab('manage');}} persona={persona} onScanningStateChange={setIsInternalScanning} />}
         {activeTab === 'manage' && (
            syncConfig.role === 'OWNER' 
-            ? <ProductManager products={posProducts} onSave={p => setPosProducts(v => [...v, p])} onDelete={id => setPosProducts(prev => prev.filter(p => p.id !== id))} onBack={() => setActiveTab('dashboard')} prefillData={prefillProduct} persona={persona} />
+            ? <ProductManager products={posProducts} onSave={p => setPosProducts(v => [...v, p])} onDelete={id => { setPosProducts(prev => prev.filter(p => p.id !== id)); speakText("เอาสินค้าออกจากสมุดแล้วนะจ๊ะ", persona); }} onBack={() => handleTabChange('dashboard')} prefillData={prefillProduct} persona={persona} onScanningStateChange={setIsInternalScanning} />
             : <div className="text-center py-20 text-red-500 font-black">เฉพาะเจ้าของที่เข้าได้นะจ๊ะ</div>
         )}
         {activeTab === 'sync' && <SyncManager config={syncConfig} ownerPhoto={ownerPhoto} onSetPhoto={setOwnerPhoto} onSave={setSyncConfig} onBackup={() => {}} onRestore={() => {}} onCreateMascot={() => {}} onOpenKeySelector={handleOpenKeySelector} />}
       </main>
 
-      {!isCameraOpen && (
-        <nav className="shrink-0 bg-white border-t border-gray-100 pb-10 px-4 pt-3 z-[100] shadow-[0_-20px_50px_rgba(0,0,0,0.1)] rounded-t-[50px] flex justify-between items-center">
+      {!shouldHideNav && (
+        <nav className="shrink-0 bg-white border-t border-gray-100 pb-10 px-4 pt-3 z-[100] shadow-[0_-20px_50px_rgba(0,0,0,0.1)] rounded-t-[50px] flex justify-between items-center animate-in slide-in-from-bottom duration-300">
           {[
             { id: 'dashboard', icon: LayoutDashboard, label: 'ภาพรวม' },
             { id: 'history', icon: History, label: 'ประวัติ' },
@@ -364,7 +357,7 @@ const App: React.FC = () => {
           ].map((tab) => (
             <button 
               key={tab.id}
-              onClick={async () => { await initAudio(); setActiveTab(tab.id as any); }} 
+              onClick={() => handleTabChange(tab.id as any)} 
               className={`flex flex-col items-center gap-1.5 flex-1 transition-all ${activeTab === tab.id ? themes[tab.id as keyof typeof themes].text + ' scale-110' : 'text-gray-300'}`}
             >
               <div className={`p-2.5 rounded-2xl ${activeTab === tab.id ? themes[tab.id as keyof typeof themes].bg : ''}`}>
@@ -376,7 +369,7 @@ const App: React.FC = () => {
         </nav>
       )}
 
-      {isCameraOpen && <CameraUploader onCapture={handleCapture} onCancel={() => setIsCameraOpen(false)} />}
+      {isCameraOpen && <CameraUploader onCapture={handleCapture} onCancel={() => { setIsCameraOpen(false); speakText("ปิดกล้องแล้วจ้ะ", persona); }} />}
     </div>
   );
 };

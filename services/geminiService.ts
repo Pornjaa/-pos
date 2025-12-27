@@ -100,35 +100,20 @@ export const testAiConnection = async () => {
   }
 };
 
-/**
- * ฟังก์ชันช่วยปรับแต่งคำพูดตามบุคลิกที่เลือก
- */
 const formatPersonaText = (text: string, persona: AiPersona): string => {
   let t = text.trim();
-  
-  // ลบคำลงท้ายเดิมๆ ออกก่อนเพื่อไม่ให้ซ้ำซ้อน
   t = t.replace(/[ครับ|ค่ะ|จ้ะ|นะจ๊ะ|จ๋า|คะ|ขะ|นะ]+$/, "");
 
   switch (persona) {
     case 'GIRLFRIEND':
-      // แฟนสาวขี้อ้อน: อ้อนด้วย "จ้ะ/จ๋า" และลงท้าย "ที่รัก"
       return `${t}นะจ๊ะที่รักจ๋า`;
-    
     case 'GRANDMA':
-      // คุณยายใจดี: สุภาพแบบโบราณ
-      if (!t.startsWith("ยาย") && !t.includes("ยาย")) {
-        return `ยายจ๋า ${t}จ้ะ`;
-      }
+      if (!t.startsWith("ยาย") && !t.includes("ยาย")) return `ยายจ๋า ${t}จ้ะ`;
       return `${t}จ้ะ`;
-    
     case 'BOYFRIEND':
-      // แฟนหนุ่ม: อบอุ่น สุภาพ
       return `${t}นะครับเตง`;
-    
     case 'PROFESSIONAL':
-      // มือโปร: ชัดเจน สั้นกระชับ
       return `${t}เรียบร้อยแล้วค่ะ`;
-    
     default:
       return t;
   }
@@ -184,7 +169,7 @@ export const recognizeProduct = async (base64Image: string, existingProductNames
   if (!isApiKeyReady()) throw new Error("MISSING_KEY");
   
   const productListContext = existingProductNames.length > 0 
-    ? `รายการสินค้าที่จดไว้ในร้านมีดังนี้: [${existingProductNames.join(", ")}] กรุณาเลือกชื่อที่ตรงกับในรูปมากที่สุดจากรายการนี้ หากไม่มีในรายการให้ตั้งชื่อใหม่ตามที่เห็น`
+    ? `รายการสินค้าที่จดไว้ในร้านมีดังนี้: [${existingProductNames.join(", ")}] กรุณาเลือกชื่อที่ตรงกับในรูปมากที่สุดจากรายการนี้`
     : "ระบุชื่อแบรนด์และขนาดบรรจุสินค้าให้ชัดเจน";
 
   try {
@@ -196,7 +181,7 @@ export const recognizeProduct = async (base64Image: string, existingProductNames
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
-          properties: { name: { type: Type.STRING, description: "ชื่อสินค้าที่ตรงกับในระบบหรือชื่อจริงของสินค้า" } },
+          properties: { name: { type: Type.STRING } },
           required: ["name"]
         }
       },
@@ -215,18 +200,14 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA'): P
   const ctx = await initAudio();
   try {
     const ai = new GoogleGenAI({ apiKey: getApiKey() });
-    
-    // ปรับการเลือกเสียง
     const voiceMap: Record<AiPersona, string> = { 
       'GRANDMA': 'Puck', 
-      'GIRLFRIEND': 'Kore', // เสียงผู้หญิงที่โทนแหลมและดูเด็กกว่า
+      'GIRLFRIEND': 'Kore',
       'BOYFRIEND': 'Charon', 
       'PROFESSIONAL': 'Zephyr' 
     };
 
-    // แปลงคำพูดตามบุคลิกก่อนส่งไปสังเคราะห์เสียง
     const formattedText = formatPersonaText(text, persona);
-
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ parts: [{ text: formattedText }] }],
@@ -236,23 +217,18 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA'): P
       },
     });
 
-    const candidates = response.candidates;
-    if (candidates && candidates.length > 0) {
-      const parts = candidates[0].content?.parts;
-      const part = parts?.find(p => !!p.inlineData?.data);
-      if (part?.inlineData?.data) {
-        const audioBuffer = await decodePcmAudio(decodeBase64(part.inlineData.data), ctx, 24000, 1);
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(ctx.destination);
-        if (ctx.state === 'suspended') await ctx.resume();
-        source.start(0);
-        return { ok: true };
-      }
+    const part = response.candidates?.[0]?.content?.parts?.find(p => !!p.inlineData?.data);
+    if (part?.inlineData?.data) {
+      const audioBuffer = await decodePcmAudio(decodeBase64(part.inlineData.data), ctx, 24000, 1);
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(ctx.destination);
+      if (ctx.state === 'suspended') await ctx.resume();
+      source.start(0);
+      return { ok: true };
     }
     return { ok: false, error: "No audio data" };
   } catch (e: any) {
-    if (e.message?.includes("429")) return { ok: false, error: 'QUOTA_EXCEEDED' };
     return { ok: false, error: e.message };
   }
 };
