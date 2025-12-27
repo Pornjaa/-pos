@@ -1,17 +1,11 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Category, AiPersona } from "../types";
 
-export const getMaskedApiKey = () => {
-  const key = process.env.API_KEY || '';
-  if (key.length < 10) return "ไม่พบกุญแจจ้ะ";
-  return `${key.substring(0, 4)}****${key.substring(key.length - 4)}`;
-};
-
 export const isApiKeyReady = () => {
   return !!process.env.API_KEY && process.env.API_KEY.length > 10;
 };
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 let audioCtx: AudioContext | null = null;
 
@@ -24,20 +18,32 @@ function decodeBase64(base64: string) {
   return bytes;
 }
 
+/**
+ * ถอดรหัส PCM 16-bit Little Endian จาก AI ให้เป็น AudioBuffer
+ */
 async function decodePcmAudio(
   data: Uint8Array,
   ctx: AudioContext,
   sampleRate: number,
   numChannels: number,
 ): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer, data.byteOffset, data.byteLength / 2);
-  const frameCount = dataInt16.length / numChannels;
+  // 16-bit = 2 bytes ต่อ 1 sample
+  // ตรวจสอบว่าจำนวน byte หาร 2 ลงตัว เพื่อป้องกันข้อมูลพัง
+  const validByteLength = data.byteLength - (data.byteLength % (2 * numChannels));
+  const frameCount = validByteLength / (2 * numChannels);
+  
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+  const view = new DataView(data.buffer, data.byteOffset, validByteLength);
 
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
     for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+      // อ่านค่า 16-bit Signed Integer แบบ Little Endian (true)
+      // Gemini AI ส่งเสียงมาเป็น Little Endian เสมอ
+      const byteOffset = (i * numChannels + channel) * 2;
+      const sample = view.getInt16(byteOffset, true);
+      // แปลงช่วงค่า -32768 ถึง 32767 เป็น -1.0 ถึง 1.0
+      channelData[i] = sample / 32768.0;
     }
   }
   return buffer;
@@ -53,7 +59,6 @@ export const initAudio = async () => {
   return audioCtx;
 };
 
-// ฟังก์ชันส่งเสียงบี๊บสั้นๆ เพื่อเช็คว่าลำโพงทำงานไหม
 export const playTestBeep = async () => {
   const ctx = await initAudio();
   const osc = ctx.createOscillator();
@@ -63,14 +68,14 @@ export const playTestBeep = async () => {
   osc.frequency.setValueAtTime(440, ctx.currentTime);
   
   gain.gain.setValueAtTime(0, ctx.currentTime);
-  gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.1);
-  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
+  gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.05);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
   
   osc.connect(gain);
   gain.connect(ctx.destination);
   
   osc.start();
-  osc.stop(ctx.currentTime + 0.5);
+  osc.stop(ctx.currentTime + 0.3);
 };
 
 export const testAiConnection = async () => {
@@ -82,7 +87,9 @@ export const testAiConnection = async () => {
     });
     return { ok: !!response.text, msg: "เชื่อมต่อ AI สำเร็จแล้วจ้ะ!" };
   } catch (e: any) {
-    return { ok: false, msg: e.message || "กุญแจอาจจะผิดหรือหมดอายุจ้ะ" };
+    let errorMsg = "กุญแจอาจจะผิดหรือหมดอายุจ้ะ";
+    if (e.message?.includes("429")) errorMsg = "โควต้าการใช้งานวันนี้หมดแล้วจ้ะ (จำกัด 10 ครั้ง/วัน)";
+    return { ok: false, msg: errorMsg };
   }
 };
 
@@ -166,28 +173,37 @@ export const generateMascot = async () => {
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: { parts: [{ text: "A friendly Thai grandmother mascot, Pixar style, 3D" }] },
-      config: { imageConfig: { aspectRatio: "1:1" } }
+      contents: {
+        parts: [
+          {
+            text: 'A cute friendly Thai shop owner mascot character, 3D render style, warm colors, professional but approachable.',
+          },
+        ],
+      },
+      config: {
+        imageConfig: {
+          aspectRatio: "1:1",
+        },
+      },
     });
-    
-    if (response.candidates && response.candidates.length > 0) {
-      const candidate = response.candidates[0];
-      if (candidate.content && candidate.content.parts) {
-        const parts = candidate.content.parts;
-        const partWithImage = parts.find(p => p.inlineData && p.inlineData.data);
-        if (partWithImage && partWithImage.inlineData && partWithImage.inlineData.data) {
-          return `data:image/png;base64,${partWithImage.inlineData.data}`;
+
+    if (response.candidates?.[0]?.content?.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData) {
+          const base64EncodeString: string = part.inlineData.data;
+          return `data:image/png;base64,${base64EncodeString}`;
         }
       }
     }
-    throw new Error("Image missing");
+    throw new Error("No image data found in response");
   } catch (e) {
-    throw new Error("วาดรูปไม่สำเร็จจ้ะ");
+    console.error("ยายจ๋า วาดรูปไม่สำเร็จจ้ะ:", e);
+    throw new Error("ยายจ๋า วาดรูปไม่สำเร็จจ้ะ");
   }
 };
 
 export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') => {
-  if (!text.trim()) return;
+  if (!text.trim()) return { ok: true };
   const ctx = await initAudio();
   try {
     const voiceMap = { 'GRANDMA': 'Kore', 'GIRLFRIEND': 'Puck', 'BOYFRIEND': 'Charon', 'PROFESSIONAL': 'Zephyr' };
@@ -200,21 +216,29 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
       },
     });
-    if (response.candidates && response.candidates.length > 0) {
-      const part = response.candidates[0].content?.parts?.find(p => p.inlineData?.data);
+    
+    if (response.candidates?.[0]?.content?.parts) {
+      const part = response.candidates[0].content.parts.find(p => p.inlineData?.data);
       if (part?.inlineData?.data) {
         const bytes = decodeBase64(part.inlineData.data);
+        // ถอดรหัสด้วย PCM Decoder ตัวใหม่ที่เสถียรกว่าเดิม
         const audioBuffer = await decodePcmAudio(bytes, ctx, 24000, 1);
+        
         const source = ctx.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(ctx.destination);
+        
+        // บังคับ Resume อีกครั้งก่อนเล่นเพื่อความชัวร์บน iOS
         if (ctx.state === 'suspended') await ctx.resume();
-        source.start();
-        return true;
+        source.start(0);
+        return { ok: true };
       }
     }
-  } catch (e) {
+  } catch (e: any) {
+    if (e.message?.includes("429")) {
+      return { ok: false, error: "QUOTA_EXCEEDED" };
+    }
     console.error("ยายจ๋า เสียงมีปัญหา:", e);
   }
-  return false;
+  return { ok: false, error: "UNKNOWN" };
 };
