@@ -45,10 +45,14 @@ export interface SyncConfig {
 }
 
 export interface SummaryStats {
-  daily: number;
-  weekly: number;
-  monthly: number;
-  yearly: number;
+  daily: number; // ยอดขายรายวัน (Money In)
+  weekly: number; // ยอดขายรายสัปดาห์
+  monthly: number; // ยอดขายรายเดือน
+  yearly: number; // ยอดขายรายปี
+  dailyInvestment: number; // ยอดลงทุนรายวัน (Money Out)
+  weeklyInvestment: number;
+  monthlyInvestment: number;
+  yearlyInvestment: number;
   byCategory: Record<Category, number>;
   totalSales: number;
   aiCredits: number;

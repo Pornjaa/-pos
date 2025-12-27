@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Camera, ShoppingCart, Trash2, CheckCircle2, X, Loader2, ArrowLeft, Zap, Image as ImageIcon, Plus, ScanLine } from 'lucide-react';
 import { speakText, recognizeProduct } from '../services/geminiService';
@@ -12,7 +11,6 @@ interface POSSystemProps {
   persona?: AiPersona;
 }
 
-// @google/genai fix: Added type assertion to persona default value to ensure it's treated as AiPersona union type
 const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBack, onUnregisteredProduct, persona = 'GRANDMA' as AiPersona }) => {
   const [cart, setCart] = useState<{product: PosProduct, qty: number}[]>([]);
   const [isScanning, setIsScanning] = useState(false);
@@ -26,7 +24,13 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const quickSelectProducts = products.filter(p => p.isQuickSelect);
+  // ปรับให้แสดงสินค้าทั้งหมด โดยเอาตัวที่ขายบ่อย (isQuickSelect) ไว้ข้างบน
+  const displayProducts = [...products].sort((a, b) => {
+    if (a.isQuickSelect && !b.isQuickSelect) return -1;
+    if (!a.isQuickSelect && b.isQuickSelect) return 1;
+    return a.name.localeCompare(b.name, 'th');
+  });
+
   const total = cart.reduce((sum, item) => sum + (item.product.price * item.qty), 0);
   const cashNum = parseFloat(cashReceived) || 0;
   const change = cashNum - total;
@@ -44,7 +48,7 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
       });
       if (videoRef.current) videoRef.current.srcObject = stream;
     } catch (err) {
-      alert("เปิดกล้องไม่ได้เลยลูก ลองใหม่อีกทีนะ");
+      alert("เปิดกล้องไม่ได้เลยลูก ลองใหมีกทีนะ");
       setIsScanning(false);
     }
   };
@@ -56,15 +60,33 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
     }
   };
 
+  /**
+   * ระบบจับคู่สินค้าแบบฉลาด (Fuzzy Match)
+   */
   const findBestMatch = (scannedName: string) => {
-    const normScanned = scannedName.toLowerCase().trim();
+    const s = scannedName.toLowerCase().trim();
+    if (!s) return null;
+
     const matches = products.map(p => {
       const pName = p.name.toLowerCase().trim();
       let score = 0;
-      if (normScanned === pName) score = 100;
-      else if (normScanned.includes(pName) || pName.includes(normScanned)) score = Math.max(pName.length, normScanned.length);
+      
+      // 1. ถ้าชื่อตรงกันเป๊ะ (1,000 คะแนน)
+      if (s === pName) score += 1000;
+      
+      // 2. ถ้ามีคำใดคำหนึ่งอยู่ในอีกชื่อ (100 คะแนน)
+      if (s.includes(pName) || pName.includes(s)) score += 100;
+
+      // 3. แยกคำแล้วดูว่าคำซ้ำกันไหม (คำละ 50 คะแนน) - รองรับชื่อยาวๆ หรือชื่อที่มีภาษาอังกฤษปน
+      const sWords = s.split(/[\s,.-/]+/).filter(w => w.length > 1);
+      const pWords = pName.split(/[\s,.-/]+/).filter(w => w.length > 1);
+      sWords.forEach(sw => {
+        if (pWords.some(pw => pw.includes(sw) || sw.includes(pw))) score += 50;
+      });
+
       return { product: p, score };
     }).filter(m => m.score > 0).sort((a, b) => b.score - a.score);
+
     return matches.length > 0 ? matches[0].product : null;
   };
 
@@ -80,10 +102,12 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
       ctx.drawImage(videoRef.current, 0, 0);
       const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
       const result = await recognizeProduct(base64);
+      
       const product = findBestMatch(result.name);
       if (!product) {
         speakText(`ไม่รู้จัก ${result.name} เลย สงสัยต้องเพิ่มของใหม่ก่อนนะ`, persona);
         onUnregisteredProduct(result.name, '');
+        setIsScanning(false);
         return;
       }
       setPendingProduct(product);
@@ -156,13 +180,13 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
         <div className="space-y-4">
           <div className="flex items-center justify-between px-2">
             <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
-              <Zap size={14} className="text-orange-500 fill-orange-500" /> ของขายบ่อย
+              <Zap size={14} className="text-orange-500 fill-orange-500" /> รายการสินค้าในร้าน
             </h4>
           </div>
           
           <div className="grid grid-cols-2 gap-3 pb-8">
-            {quickSelectProducts.length > 0 ? (
-              quickSelectProducts.map(p => (
+            {displayProducts.length > 0 ? (
+              displayProducts.map(p => (
                 <button 
                   key={p.id} 
                   onClick={(e) => {
@@ -170,20 +194,20 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
                     e.stopPropagation();
                     addToCart(p);
                   }}
-                  className="bg-white border-2 border-gray-100 p-4 rounded-[28px] flex flex-col gap-1 active:scale-95 transition-all shadow-sm hover:border-blue-400 group text-left relative z-10 cursor-pointer pointer-events-auto"
+                  className={`bg-white border-2 p-4 rounded-[28px] flex flex-col gap-1 active:scale-95 transition-all shadow-sm group text-left relative z-10 cursor-pointer pointer-events-auto ${p.isQuickSelect ? 'border-orange-100' : 'border-gray-100 opacity-90'}`}
                 >
                   <p className="font-black text-gray-800 text-xs leading-tight truncate w-full">{p.name}</p>
                   <div className="flex justify-between items-center w-full mt-1">
                     <p className="font-black text-blue-600 text-lg">฿{p.price}</p>
-                    <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center group-active:bg-blue-600 group-active:text-white transition-colors">
-                       <Plus size={20} strokeWidth={4} />
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center group-active:text-white transition-colors ${p.isQuickSelect ? 'bg-orange-50 text-orange-600 group-active:bg-orange-600' : 'bg-blue-50 text-blue-600 group-active:bg-blue-600'}`}>
+                       {p.isQuickSelect ? <Zap size={16} fill="currentColor" /> : <Plus size={20} strokeWidth={4} />}
                     </div>
                   </div>
                 </button>
               ))
             ) : (
               <div className="col-span-2 py-10 text-center bg-gray-100/50 rounded-[40px] border-4 border-dashed border-gray-200">
-                 <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">ยังไม่มีของขายบ่อยเลย</p>
+                 <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">ยังไม่มีของในสมุดจดเลยจ้ะ</p>
               </div>
             )}
           </div>

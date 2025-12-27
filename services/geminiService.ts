@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Category, AiPersona } from "../types";
 
@@ -6,9 +7,22 @@ export const isApiKeyReady = () => {
   return !!key && key.length > 10;
 };
 
-// Ensure API_KEY is a string to satisfy TypeScript
-const apiKey = process.env.API_KEY || "";
-const ai = new GoogleGenAI({ apiKey });
+// เช็คว่ามีการเลือก API Key ผ่าน AI Studio หรือยัง
+export const hasCustomKey = async () => {
+  if (typeof (window as any).aistudio?.hasSelectedApiKey === 'function') {
+    return await (window as any).aistudio.hasSelectedApiKey();
+  }
+  return false;
+};
+
+// เปิดหน้าต่างเลือก API Key
+export const openKeySelector = async () => {
+  if (typeof (window as any).aistudio?.openSelectKey === 'function') {
+    await (window as any).aistudio.openSelectKey();
+    return true;
+  }
+  return false;
+};
 
 let audioCtx: AudioContext | null = null;
 
@@ -21,9 +35,6 @@ function decodeBase64(base64: string) {
   return bytes;
 }
 
-/**
- * Robust PCM 16-bit Little Endian decoder using DataView for cross-device compatibility.
- */
 async function decodePcmAudio(
   data: Uint8Array,
   ctx: AudioContext,
@@ -61,17 +72,13 @@ export const playTestBeep = async () => {
   const ctx = await initAudio();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
-  
   osc.type = 'sine';
   osc.frequency.setValueAtTime(440, ctx.currentTime);
-  
   gain.gain.setValueAtTime(0, ctx.currentTime);
   gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.05);
   gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
-  
   osc.connect(gain);
   gain.connect(ctx.destination);
-  
   osc.start();
   osc.stop(ctx.currentTime + 0.3);
 };
@@ -79,6 +86,7 @@ export const playTestBeep = async () => {
 export const testAiConnection = async () => {
   if (!isApiKeyReady()) return { ok: false, msg: "ไม่พบกุญแจ API ในระบบจ้ะ" };
   try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: "ตอบคำว่า OK",
@@ -86,17 +94,24 @@ export const testAiConnection = async () => {
     return { ok: !!response.text, msg: "เชื่อมต่อ AI สำเร็จแล้วจ้ะ!" };
   } catch (e: any) {
     let errorMsg = "กุญแจอาจจะผิดหรือหมดอายุจ้ะ";
-    if (e.message?.includes("429")) errorMsg = "โควต้าการใช้งานวันนี้หมดแล้วจ้ะ (จำกัด 10 ครั้ง/วัน)";
+    if (e.message?.includes("429")) errorMsg = "โควต้าการใช้งานวันนี้หมดแล้วจ้ะ (จำกัด 20 ครั้ง/วัน)";
     return { ok: false, msg: errorMsg };
   }
 };
 
 export const processReceiptImage = async (base64Image: string) => {
   try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       config: {
-        systemInstruction: "คุณคือผู้เชี่ยวชาญการอ่านบิลสินค้าในไทย สกัดข้อมูลจากรูปภาพบิลอย่างละเอียด",
+        systemInstruction: `คุณคือผู้เชี่ยวชาญการอ่านบิลส่งของในร้านค้าไทย หน้าที่คือสกัดข้อมูลบิลให้คุณยายเจ้าของร้าน
+        คำสั่งสำคัญ:
+        1. พยายามสแกนหาตัวเลข "ยอดรวมสุทธิ" หรือ "Total" ในบิลให้เจอ
+        2. สกัดรายการสินค้าทุกอย่าง (ชื่อ, จำนวน, ราคารวมรายการ)
+        3. หากอ่านรายการสินค้าไม่ได้เลย ให้คืนรายการเดียวที่มีชื่อว่า "รวมยอดตามบิล" และใส่ยอดรวมเงินสุทธิที่เห็นลงในช่อง totalPrice
+        4. ห้ามส่งคืนอาเรย์ items ว่างเด็ดขาด อย่างน้อยต้องมี 1 รายการ
+        5. สำหรับน้ำแข็ง: สกัดจำนวนที่มาส่ง (delivered) และจำนวนที่คืนถุง (returned) จากข้อความในบิล`,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -130,19 +145,25 @@ export const processReceiptImage = async (base64Image: string) => {
       contents: {
         parts: [
           { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-          { text: "อ่านบิลนี้" }
+          { text: "ช่วยอ่านบิลนี้และสกัดยอดเงินทั้งหมดมาให้คุณยายตรวจสอบหน่อยจ้ะ" }
         ],
       },
     });
+    
     return JSON.parse(response.text || "{}");
-  } catch (e) {
-    console.error(e);
+  } catch (e: any) {
+    console.error("Gemini API Error:", e);
+    // ตรวจสอบว่าเป็นเออเร่อเรื่องโควต้าหรือไม่
+    if (e.message?.includes("429") || e.message?.includes("quota") || e.message?.includes("RESOURCE_EXHAUSTED")) {
+      throw new Error("QUOTA_EXCEEDED");
+    }
     throw new Error("ยายจ๋า อ่านบิลไม่สำเร็จจ้ะ");
   }
 };
 
 export const recognizeProduct = async (base64Image: string) => {
   try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       config: {
@@ -162,87 +183,62 @@ export const recognizeProduct = async (base64Image: string) => {
       },
     });
     return JSON.parse(response.text || "{}");
-  } catch (e) {
+  } catch (e: any) {
+    if (e.message?.includes("429") || e.message?.includes("quota") || e.message?.includes("RESOURCE_EXHAUSTED")) {
+      throw new Error("QUOTA_EXCEEDED");
+    }
     throw new Error("จำสินค้าไม่ได้จ้ะ");
   }
 };
 
 export const generateMascot = async () => {
   try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
-        parts: [
-          {
-            text: 'A cute friendly Thai shop owner mascot character, 3D render style, warm colors, professional but approachable.',
-          },
-        ],
+        parts: [{ text: 'A cute friendly Thai shop owner mascot character, 3D render style, warm colors, professional but approachable.' }],
       },
-      config: {
-        imageConfig: {
-          aspectRatio: "1:1",
-        },
-      },
+      config: { imageConfig: { aspectRatio: "1:1" } },
     });
-
     const candidate = response.candidates?.[0];
     if (candidate?.content?.parts) {
       for (const part of candidate.content.parts) {
-        if (part.inlineData?.data) {
-          const base64Data = part.inlineData.data;
-          return `data:image/png;base64,${base64Data}`;
-        }
+        if (part.inlineData?.data) return `data:image/png;base64,${part.inlineData.data}`;
       }
     }
-    throw new Error("No image data found in response");
+    throw new Error("No image data");
   } catch (e) {
-    console.error("ยายจ๋า วาดรูปไม่สำเร็จจ้ะ:", e);
     throw new Error("ยายจ๋า วาดรูปไม่สำเร็จจ้ะ");
   }
 };
 
-export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') => {
+export const speakText = async (text: string, persona: AiPersona = 'GRANDMA'): Promise<{ ok: boolean; error?: string }> => {
   if (!text.trim()) return { ok: true };
   const ctx = await initAudio();
   try {
-    const voiceMap: Record<AiPersona, string> = { 
-      'GRANDMA': 'Kore', 
-      'GIRLFRIEND': 'Puck', 
-      'BOYFRIEND': 'Charon', 
-      'PROFESSIONAL': 'Zephyr' 
-    };
-    const voiceName = voiceMap[persona] || 'Kore';
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const voiceMap: Record<AiPersona, string> = { 'GRANDMA': 'Kore', 'GIRLFRIEND': 'Puck', 'BOYFRIEND': 'Charon', 'PROFESSIONAL': 'Zephyr' };
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ parts: [{ text }] }],
       config: {
         responseModalities: [Modality.AUDIO],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceMap[persona] || 'Kore' } } },
       },
     });
-    
-    const candidate = response.candidates?.[0];
-    if (candidate?.content?.parts) {
-      const part = candidate.content.parts.find(p => !!p.inlineData?.data);
-      const audioData = part?.inlineData?.data;
-      if (audioData) {
-        const bytes = decodeBase64(audioData);
-        const audioBuffer = await decodePcmAudio(bytes, ctx, 24000, 1);
-        
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(ctx.destination);
-        
-        if (ctx.state === 'suspended') await ctx.resume();
-        source.start(0);
-        return { ok: true };
-      }
+    const part = response.candidates?.[0]?.content?.parts.find(p => !!p.inlineData?.data);
+    if (part?.inlineData?.data) {
+      const audioBuffer = await decodePcmAudio(decodeBase64(part.inlineData.data), ctx, 24000, 1);
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(ctx.destination);
+      if (ctx.state === 'suspended') await ctx.resume();
+      source.start(0);
+      return { ok: true };
     }
   } catch (e: any) {
-    if (e.message?.includes("429")) {
-      return { ok: false, error: "QUOTA_EXCEEDED" };
-    }
-    console.error("ยายจ๋า เสียงมีปัญหา:", e);
+    if (e.message?.includes("429")) return { ok: false, error: 'QUOTA_EXCEEDED' };
   }
-  return { ok: false, error: "UNKNOWN" };
+  return { ok: false };
 };

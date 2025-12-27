@@ -149,7 +149,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, currentIceBalance, ownerPh
           <CreditCard className="w-10 h-10 opacity-30" />
           <div className="relative z-10">
             <p className="text-[10px] font-black uppercase tracking-widest opacity-70 mb-1">ยอดลงทุนวันนี้</p>
-            <h3 className="text-3xl font-black">฿{stats.daily.toLocaleString()}</h3>
+            <h3 className="text-3xl font-black">฿{stats.dailyInvestment.toLocaleString()}</h3>
           </div>
           <div className="absolute -bottom-4 -right-4 w-20 h-20 bg-white/10 rounded-full"></div>
         </div>

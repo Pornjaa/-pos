@@ -1,5 +1,6 @@
+
 import React, { useState, useRef } from 'react';
-import { Camera, User, Wand2, Heart, Star, Briefcase, Volume2, X, ShieldCheck, Loader2, CheckCircle, AlertCircle, Headphones, KeyRound, BellRing } from 'lucide-react';
+import { Camera, User, Wand2, Heart, Star, Briefcase, Volume2, X, ShieldCheck, Loader2, CheckCircle, AlertCircle, Headphones, KeyRound, BellRing, Key } from 'lucide-react';
 import { SyncConfig, AiPersona } from '../types';
 import { speakText, isApiKeyReady, testAiConnection, initAudio, playTestBeep } from '../services/geminiService';
 
@@ -11,9 +12,10 @@ interface SyncManagerProps {
   onBackup: () => void;
   onRestore: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onCreateMascot: () => void;
+  onOpenKeySelector?: () => void;
 }
 
-const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhoto, onSave, onCreateMascot }) => {
+const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhoto, onSave, onCreateMascot, onOpenKeySelector }) => {
   const [aiPersona, setAiPersona] = useState<AiPersona>(config.aiPersona || 'GRANDMA');
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [apiStatus, setApiStatus] = useState<'IDLE' | 'LOADING' | 'OK' | 'ERROR'>('IDLE');
@@ -112,8 +114,14 @@ const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhot
         </div>
 
         <div className="bg-gray-50 p-6 rounded-[35px] border-2 border-gray-100 space-y-4">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">ตรวจสอบความพร้อมระบบ</p>
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">จัดการระบบ AI</p>
           <div className="flex flex-col gap-2">
+            <button 
+              onClick={onOpenKeySelector}
+              className="w-full p-4 rounded-2xl border-2 border-blue-600 bg-blue-600 text-white flex items-center justify-center gap-2 font-black text-sm active:scale-95 transition-all shadow-lg"
+            >
+              <Key size={20}/> เลือกกุญแจ (API Key) ส่วนตัว
+            </button>
             <div className="flex gap-2">
               <button onClick={checkApi} className="flex-1 p-4 rounded-2xl border-2 bg-white flex flex-col items-center gap-1 active:bg-gray-100 transition-colors">
                 {apiStatus === 'LOADING' ? <Loader2 className="animate-spin text-blue-500" size={20}/> :
@@ -135,6 +143,9 @@ const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhot
               {apiMsg}
             </div>
           )}
+          <p className="text-[9px] text-gray-400 font-bold text-center leading-tight">
+            ยายจ๋า หากโควต้าสแกนฟรีหมด ยายสามารถนำกุญแจส่วนตัวมาใส่เพื่อใช้งานต่อได้นะจ๊ะ (ดูวิธีสมัครที่ ai.google.dev/gemini-api/docs/billing)
+          </p>
         </div>
 
         <div className="space-y-4">
