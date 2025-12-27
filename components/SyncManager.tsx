@@ -1,8 +1,7 @@
-
-import React, { useState, useRef, useEffect } from 'react';
-import { Cloud, Save, Camera, User, Wand2, Heart, Star, Briefcase, Volume2, X, ShieldCheck, ShieldAlert, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Camera, User, Wand2, Heart, Star, Briefcase, Volume2, X, ShieldCheck, Loader2, CheckCircle, AlertCircle, Headphones, KeyRound, BellRing } from 'lucide-react';
 import { SyncConfig, AiPersona } from '../types';
-import { speakText, isApiKeyReady, testAiConnection, initAudio } from '../services/geminiService';
+import { speakText, isApiKeyReady, getMaskedApiKey, testAiConnection, initAudio, playTestBeep } from '../services/geminiService';
 
 interface SyncManagerProps {
   config: SyncConfig;
@@ -14,12 +13,9 @@ interface SyncManagerProps {
   onCreateMascot: () => void;
 }
 
-const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhoto, onSave, onBackup, onRestore, onCreateMascot }) => {
+const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhoto, onSave, onCreateMascot }) => {
   const [aiPersona, setAiPersona] = useState<AiPersona>(config.aiPersona || 'GRANDMA');
-  const [pin, setPin] = useState('');
   const [isCameraOpen, setIsCameraOpen] = useState(false);
-  
-  // สถานะการตรวจสอบ
   const [apiStatus, setApiStatus] = useState<'IDLE' | 'LOADING' | 'OK' | 'ERROR'>('IDLE');
   const [apiMsg, setApiMsg] = useState('');
   const [testSoundStatus, setTestSoundStatus] = useState<'IDLE' | 'LOADING' | 'DONE'>('IDLE');
@@ -30,20 +26,25 @@ const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhot
   const checkApi = async () => {
     setApiStatus('LOADING');
     const result = await testAiConnection();
-    if (result.ok) {
-      setApiStatus('OK');
-      setApiMsg(result.msg);
-    } else {
-      setApiStatus('ERROR');
-      setApiMsg(result.msg);
-    }
+    setApiStatus(result.ok ? 'OK' : 'ERROR');
+    setApiMsg(result.msg);
   };
 
-  const handleTestSound = async () => {
+  const handleTestBeep = async () => {
+    await initAudio();
+    await playTestBeep();
+  };
+
+  const handleUnlockAudio = async () => {
     setTestSoundStatus('LOADING');
-    await initAudio(); // ปลุกระบบเสียง
-    const success = await speakText("ระบบเสียงพร้อมทำงานแล้วนะจ๊ะยาย ได้ยินชัดเจนไหมจ๊ะ?", aiPersona);
-    setTestSoundStatus('DONE');
+    try {
+      const ctx = await initAudio();
+      await ctx.resume();
+      const success = await speakText("ลำโพงยายเปิดแล้วนะจ๊ะ ได้ยินฉันไหม?", aiPersona);
+      setTestSoundStatus('DONE');
+    } catch (e) {
+      setTestSoundStatus('IDLE');
+    }
     setTimeout(() => setTestSoundStatus('IDLE'), 3000);
   };
 
@@ -52,7 +53,7 @@ const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhot
       setIsCameraOpen(true);
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
       if (videoRef.current) videoRef.current.srcObject = stream;
-    } catch (err) { alert("เปิดกล้องไม่ได้จ้ะ"); setIsCameraOpen(false); }
+    } catch (err) { setIsCameraOpen(false); }
   };
 
   const capturePhoto = () => {
@@ -65,7 +66,7 @@ const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhot
   };
 
   const handleFinalSave = () => {
-    onSave({ ...config, aiPersona, ownerPin: pin || config.ownerPin });
+    onSave({ ...config, aiPersona });
     speakText("บันทึกเรียบร้อยแล้วจ้ะ", aiPersona);
   };
 
@@ -77,99 +78,66 @@ const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhot
   ];
 
   return (
-    <div className="space-y-6 pb-24 animate-in fade-in slide-in-from-right duration-500">
+    <div className="space-y-6 pb-24">
       <div className="bg-white p-8 rounded-[50px] shadow-2xl border border-rose-50 space-y-8 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-rose-50 rounded-bl-[100px] z-0 opacity-50"></div>
-        
-        <div className="text-center space-y-4 relative z-10">
+        <div className="text-center space-y-4">
           <div className="relative inline-block group">
-            <div className="w-32 h-32 bg-rose-50 rounded-[40px] flex items-center justify-center mx-auto mb-4 overflow-hidden border-4 border-white shadow-xl transition-transform group-hover:scale-105 duration-300">
+            <div className="w-32 h-32 bg-rose-50 rounded-[40px] flex items-center justify-center mx-auto mb-4 overflow-hidden border-4 border-white shadow-xl">
               {ownerPhoto ? <img src={ownerPhoto} className="w-full h-full object-cover" /> : <User size={56} className="text-rose-200" />}
             </div>
             <div className="absolute -bottom-2 -right-2 flex flex-col gap-2">
-              <button onClick={startCamera} className="bg-rose-600 text-white p-3 rounded-full shadow-lg border-2 border-white hover:bg-rose-700 active:scale-90 transition-all"><Camera size={18} /></button>
-              <button onClick={onCreateMascot} className="bg-blue-600 text-white p-3 rounded-full shadow-lg border-2 border-white hover:bg-blue-700 active:scale-90 transition-all"><Wand2 size={18} /></button>
+              <button onClick={startCamera} className="bg-rose-600 text-white p-3 rounded-full shadow-lg border-2 border-white active:scale-90"><Camera size={18} /></button>
+              <button onClick={onCreateMascot} className="bg-blue-600 text-white p-3 rounded-full shadow-lg border-2 border-white active:scale-90"><Wand2 size={18} /></button>
             </div>
           </div>
-          <div>
-            <h2 className="text-2xl font-black text-gray-800">โปรไฟล์ของคุณยาย</h2>
-          </div>
+          <h2 className="text-2xl font-black text-gray-800">โปรไฟล์ของคุณยาย</h2>
         </div>
 
-        {/* --- Diagnostic Section --- */}
         <div className="bg-gray-50 p-6 rounded-[35px] border-2 border-gray-100 space-y-4">
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">ตรวจสอบความพร้อมระบบ</p>
-          
-          <div className="flex gap-2">
-            {/* เช็ค API */}
-            <button 
-              onClick={checkApi}
-              disabled={apiStatus === 'LOADING'}
-              className={`flex-1 p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 ${
-                apiStatus === 'OK' ? 'bg-green-50 border-green-200' : 
-                apiStatus === 'ERROR' ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'
-              }`}
-            >
-              {apiStatus === 'LOADING' ? <Loader2 className="animate-spin text-blue-500" size={20}/> :
-               apiStatus === 'OK' ? <CheckCircle className="text-green-500" size={20}/> :
-               apiStatus === 'ERROR' ? <AlertCircle className="text-red-500" size={20}/> : <ShieldCheck className="text-gray-400" size={20}/>}
-              <span className="text-[10px] font-black uppercase tracking-tighter">เช็คกุญแจ AI</span>
-            </button>
-
-            {/* เช็คเสียง */}
-            <button 
-              onClick={handleTestSound}
-              disabled={testSoundStatus === 'LOADING'}
-              className={`flex-1 p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 ${
-                testSoundStatus === 'DONE' ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-100'
-              }`}
-            >
-              {testSoundStatus === 'LOADING' ? <Loader2 className="animate-spin text-blue-500" size={20}/> : 
-               <Volume2 className={testSoundStatus === 'DONE' ? 'text-blue-500' : 'text-gray-400'} size={20}/>}
-              <span className="text-[10px] font-black uppercase tracking-tighter">ทดสอบเสียง</span>
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <button onClick={checkApi} className="flex-1 p-4 rounded-2xl border-2 bg-white flex flex-col items-center gap-1">
+                {apiStatus === 'LOADING' ? <Loader2 className="animate-spin text-blue-500" size={20}/> :
+                 apiStatus === 'OK' ? <CheckCircle className="text-green-500" size={20}/> :
+                 apiStatus === 'ERROR' ? <AlertCircle className="text-red-500" size={20}/> : <KeyRound className="text-gray-400" size={20}/>}
+                <span className="text-[10px] font-black uppercase">เช็คกุญแจ AI</span>
+              </button>
+              <button onClick={handleUnlockAudio} className="flex-1 p-4 rounded-2xl border-2 bg-white flex flex-col items-center gap-1">
+                <Volume2 className={testSoundStatus === 'DONE' ? 'text-blue-500' : 'text-gray-400'} size={20}/>
+                <span className="text-[10px] font-black uppercase">ทดสอบเสียงพูด</span>
+              </button>
+            </div>
+            <button onClick={handleTestBeep} className="w-full p-3 rounded-2xl border-2 border-blue-100 bg-blue-50 text-blue-600 flex items-center justify-center gap-2 font-black text-xs">
+              <BellRing size={16}/> ทดสอบลำโพง (Beep)
             </button>
           </div>
-          
-          {apiMsg && (
-            <div className={`p-3 rounded-xl text-center text-[10px] font-bold ${apiStatus === 'OK' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-              {apiMsg}
-            </div>
-          )}
+          <div className="bg-white p-3 rounded-xl border border-gray-100">
+             <p className="text-[8px] font-black text-gray-400 uppercase">กุญแจที่แอปใช้ตอนนี้: <span className="font-mono text-gray-600">{getMaskedApiKey()}</span></p>
+          </div>
         </div>
 
-        {/* Persona Selection */}
         <div className="space-y-4">
           <label className="text-[10px] font-black text-rose-300 uppercase tracking-[0.3em] ml-6">เลือกเสียงคู่หูช่วยขาย</label>
           <div className="grid grid-cols-1 gap-3">
             {personas.map((p) => (
-              <button 
-                key={p.id}
-                onClick={() => { setAiPersona(p.id); speakText("เลือกเสียงฉันนะจ๊ะ", p.id); }}
-                className={`p-4 rounded-[30px] border-2 flex items-center gap-4 transition-all ${aiPersona === p.id ? 'bg-rose-50 border-rose-500 shadow-md scale-[1.02]' : 'bg-gray-50 border-transparent opacity-60'}`}
-              >
-                <div className={`w-12 h-12 ${p.color} rounded-2xl flex items-center justify-center text-white shadow-sm`}><p.icon size={24} /></div>
-                <div className="text-left">
-                  <p className="font-black text-gray-800 text-sm">{p.label}</p>
-                  <p className="text-[10px] font-bold text-gray-400">{p.desc}</p>
-                </div>
+              <button key={p.id} onClick={() => { setAiPersona(p.id); speakText("เลือกเสียงฉันนะจ๊ะ", p.id); }}
+                className={`p-4 rounded-[30px] border-2 flex items-center gap-4 transition-all ${aiPersona === p.id ? 'bg-rose-50 border-rose-500' : 'bg-gray-50 border-transparent opacity-60'}`}>
+                <div className={`w-12 h-12 ${p.color} rounded-2xl flex items-center justify-center text-white`}><p.icon size={24} /></div>
+                <div className="text-left"><p className="font-black text-gray-800 text-sm">{p.label}</p></div>
               </button>
             ))}
           </div>
         </div>
 
-        <button 
-          onClick={handleFinalSave} 
-          className="w-full bg-rose-600 text-white py-8 rounded-[40px] font-black text-2xl shadow-xl active:scale-95 transition-all hover:bg-rose-700"
-        >
-          <Save size={28} /> บันทึกการตั้งค่า
-        </button>
+        <button onClick={handleFinalSave} className="w-full bg-rose-600 text-white py-8 rounded-[40px] font-black text-2xl shadow-xl active:scale-95">บันทึกการตั้งค่า</button>
       </div>
 
       {isCameraOpen && (
         <div className="fixed inset-0 z-[250] bg-black flex flex-col">
-          <div className="p-8 flex justify-between items-center text-white bg-black/40 absolute top-0 left-0 right-0 z-20"><button onClick={() => setIsCameraOpen(false)} className="p-4 bg-white/10 rounded-full backdrop-blur-md"><X size={32}/></button><span className="font-black text-xl uppercase tracking-widest">ถ่ายรูปคุณ</span><div className="w-14"></div></div>
+          <div className="p-8 flex justify-between items-center text-white bg-black/40 absolute top-0 left-0 right-0 z-20"><button onClick={() => setIsCameraOpen(false)} className="p-4 bg-white/10 rounded-full"><X size={32}/></button></div>
           <video ref={videoRef} autoPlay playsInline className="flex-1 object-cover scale-x-[-1]" />
-          <div className="p-12 flex justify-center bg-black"><button onClick={capturePhoto} className="w-28 h-28 bg-white rounded-full flex items-center justify-center border-[12px] border-gray-100 active:scale-90 transition-all"><Camera size={56} className="text-rose-600" /></button></div>
+          <div className="p-12 flex justify-center bg-black"><button onClick={capturePhoto} className="w-28 h-28 bg-white rounded-full border-[12px] border-gray-100 flex items-center justify-center"><Camera size={56} className="text-rose-600" /></button></div>
           <canvas ref={canvasRef} className="hidden" />
         </div>
       )}

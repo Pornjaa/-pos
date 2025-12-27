@@ -1,8 +1,12 @@
-
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Category, AiPersona } from "../types";
 
-// ฟังก์ชันตรวจสอบเบื้องต้นว่า API KEY มีอยู่ไหม
+export const getMaskedApiKey = () => {
+  const key = process.env.API_KEY || '';
+  if (key.length < 10) return "ไม่พบกุญแจจ้ะ";
+  return `${key.substring(0, 4)}****${key.substring(key.length - 4)}`;
+};
+
 export const isApiKeyReady = () => {
   return !!process.env.API_KEY && process.env.API_KEY.length > 10;
 };
@@ -12,16 +16,12 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 let audioCtx: AudioContext | null = null;
 
 function decodeBase64(base64: string) {
-  try {
-    const binaryString = atob(base64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes;
-  } catch (e) {
-    throw new Error("Base64 decoding failed");
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
   }
+  return bytes;
 }
 
 async function decodePcmAudio(
@@ -47,33 +47,42 @@ export const initAudio = async () => {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
   }
-  
   if (audioCtx.state === 'suspended') {
     await audioCtx.resume();
   }
-  
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  gain.gain.value = 0; 
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start(0);
-  osc.stop(0.001);
-  
   return audioCtx;
 };
 
-// ฟังก์ชันทดสอบการเชื่อมต่อกับ AI จริงๆ
+// ฟังก์ชันส่งเสียงบี๊บสั้นๆ เพื่อเช็คว่าลำโพงทำงานไหม
+export const playTestBeep = async () => {
+  const ctx = await initAudio();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(440, ctx.currentTime);
+  
+  gain.gain.setValueAtTime(0, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.1);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
+  
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  
+  osc.start();
+  osc.stop(ctx.currentTime + 0.5);
+};
+
 export const testAiConnection = async () => {
   if (!isApiKeyReady()) return { ok: false, msg: "ไม่พบกุญแจ API ในระบบจ้ะ" };
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: "ตอบคำว่า OK สั้นๆ",
+      contents: "ตอบคำว่า OK",
     });
     return { ok: !!response.text, msg: "เชื่อมต่อ AI สำเร็จแล้วจ้ะ!" };
   } catch (e: any) {
-    return { ok: false, msg: e.message || "เชื่อมต่อไม่สำเร็จจ้ะ" };
+    return { ok: false, msg: e.message || "กุญแจอาจจะผิดหรือหมดอายุจ้ะ" };
   }
 };
 
@@ -179,13 +188,10 @@ export const generateMascot = async () => {
 
 export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') => {
   if (!text.trim()) return;
-
   const ctx = await initAudio();
-
   try {
     const voiceMap = { 'GRANDMA': 'Kore', 'GIRLFRIEND': 'Puck', 'BOYFRIEND': 'Charon', 'PROFESSIONAL': 'Zephyr' };
     const voiceName = voiceMap[persona] || 'Kore';
-    
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ parts: [{ text }] }],
@@ -194,23 +200,17 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
       },
     });
-
     if (response.candidates && response.candidates.length > 0) {
-      const candidate = response.candidates[0];
-      if (candidate.content && candidate.content.parts) {
-        const parts = candidate.content.parts;
-        const partWithAudio = parts.find(p => p.inlineData && p.inlineData.data);
-        if (partWithAudio && partWithAudio.inlineData && partWithAudio.inlineData.data) {
-          const base64Audio = partWithAudio.inlineData.data;
-          const bytes = decodeBase64(base64Audio);
-          const audioBuffer = await decodePcmAudio(bytes, ctx, 24000, 1);
-          
-          const source = ctx.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(ctx.destination);
-          source.start();
-          return true; // สำเร็จ
-        }
+      const part = response.candidates[0].content?.parts?.find(p => p.inlineData?.data);
+      if (part?.inlineData?.data) {
+        const bytes = decodeBase64(part.inlineData.data);
+        const audioBuffer = await decodePcmAudio(bytes, ctx, 24000, 1);
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(ctx.destination);
+        if (ctx.state === 'suspended') await ctx.resume();
+        source.start();
+        return true;
       }
     }
   } catch (e) {
