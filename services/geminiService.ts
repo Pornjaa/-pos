@@ -122,34 +122,36 @@ export const generateMascot = async () => {
 };
 
 export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') => {
+  if (!text.trim()) return;
   try {
     const ai = getAi();
-    let personaPrompt = "";
-    let voiceName = "Kore"; // Default female
+    let personaInstruction = "";
+    let voiceName = "Kore"; 
 
     switch(persona) {
       case 'GRANDMA':
-        personaPrompt = `พูดด้วยน้ำเสียงหญิงชราไทยที่ใจดีและอบอุ่น เหมือนยายกำลังคุยกับหลานที่รัก ใช้คำสร้อยเช่น 'นะลูก', 'จ้ะ', 'ยาย...' และน้ำเสียงอ่อนโยน: ${text}`;
+        personaInstruction = "Speak as a kind Thai grandmother. Use 'นะลูก', 'จ้ะ'. Tone: warm and gentle.";
         voiceName = "Kore";
         break;
       case 'GIRLFRIEND':
-        personaPrompt = `สวมบทบาทเป็นแฟนสาวที่ขี้อ้อนและรักแฟนมาก พูดจาน่ารัก หวานหยดย้อย ต้องเรียกผู้ใช้ว่า 'ที่รักจ๋า' หรือ 'เค้า' ทุกประโยค และลงท้ายด้วย 'นะคะ' หรือ 'น้าาา': ${text}`;
+        personaInstruction = "Speak as an affectionate Thai girlfriend. Use 'ที่รักจ๋า', 'นะคะ'. Tone: sweet and playful.";
         voiceName = "Puck";
         break;
       case 'BOYFRIEND':
-        personaPrompt = `สวมบทบาทเป็นแฟนหนุ่มแสนดี อบอุ่น สุภาพบุรุษ พูดจานุ่มนวล ต้องเรียกผู้ใช้ว่า 'ที่รักครับ' หรือ 'คุณ' ทุกประโยค และใช้น้ำเสียงปกป้องดูแล: ${text}`;
+        personaInstruction = "Speak as a caring Thai boyfriend. Use 'ที่รักครับ', 'นะครับ'. Tone: gentle and protective.";
         voiceName = "Charon";
         break;
       case 'PROFESSIONAL':
-        personaPrompt = `สวมบทบาทเป็นผู้ช่วยส่วนตัวมืออาชีพ พูดจาฉะฉาน ชัดเจน เป็นทางการแต่ยังคงความสุภาพ: ${text}`;
+        personaInstruction = "Speak as a professional Thai assistant. Tone: clear and formal.";
         voiceName = "Zephyr";
         break;
     }
     
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: personaPrompt }] }],
+      contents: [{ parts: [{ text: `Instruction: ${personaInstruction}. Speech Content: ${text}` }] }],
       config: {
+        systemInstruction: "You are a professional Text-to-Speech engine. Your ONLY output is audio content. Do not provide any text response.",
         responseModalities: [Modality.AUDIO],
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } },
       },
@@ -158,17 +160,22 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (base64Audio) {
       if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      
       const binaryString = atob(base64Audio);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+      
       const dataInt16 = new Int16Array(bytes.buffer);
       const buffer = audioCtx.createBuffer(1, dataInt16.length, 24000);
       const channelData = buffer.getChannelData(0);
       for (let i = 0; i < dataInt16.length; i++) channelData[i] = dataInt16[i] / 32768.0;
+      
       const source = audioCtx.createBufferSource();
       source.buffer = buffer;
       source.connect(audioCtx.destination);
       source.start();
     }
-  } catch (e) { console.error(e); }
+  } catch (e) { 
+    console.error("TTS Error:", e);
+  }
 };
