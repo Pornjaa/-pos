@@ -231,7 +231,7 @@ const App: React.FC = () => {
   const handleTabChange = async (tab: any) => {
     await initAudio();
     setActiveTab(tab);
-    // ลบการพูดชื่อหน้าออกเพื่อลดความรำคาญ
+    // Silent tab change as requested
   };
 
   return (
@@ -263,7 +263,7 @@ const App: React.FC = () => {
               <Loader2 className={`w-20 h-20 ${currentTheme.text} animate-spin`} />
               <Sparkles className="absolute -top-2 -right-2 text-yellow-500 animate-bounce" />
             </div>
-            <h2 className="text-2xl font-black text-gray-800 tracking-tight">กำลังเพ่งบิลอยู่นะจ๊ะยาย...</h2>
+            <h2 className="text-2xl font-black text-gray-800 tracking-tight">กำลังเพ่งอยู่นะจ๊ะยาย...</h2>
             <p className="text-gray-400 font-bold mt-2">ห้ามปิดหน้านี้นะจ๊ะ</p>
           </div>
         )}
@@ -282,7 +282,7 @@ const App: React.FC = () => {
         {/* Review Modal */}
         {pendingRecord && (
           <div className="fixed inset-0 z-[2000] bg-black/95 backdrop-blur-2xl flex flex-col p-4 overflow-y-auto">
-            <div className="bg-white w-full max-w-md rounded-[50px] p-6 space-y-6 shadow-2xl my-auto mx-auto relative flex flex-col max-h-[95vh] animate-in zoom-in duration-300">
+            <div className="bg-white w-full max-w-md rounded-[50px] p-6 shadow-2xl my-auto mx-auto relative flex flex-col max-h-[95vh] animate-in zoom-in duration-300">
               <div className="shrink-0">
                 {lastCapturedImage && (
                   <div className={`w-full overflow-hidden rounded-[30px] border-4 border-blue-50 transition-all cursor-pointer mb-4 ${showImagePreview ? 'h-64' : 'h-16'}`} onClick={() => setShowImagePreview(!showImagePreview)}>

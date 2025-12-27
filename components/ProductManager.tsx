@@ -77,6 +77,10 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onSave, onDel
     canvas.getContext('2d')!.drawImage(videoRef.current, 0, 0);
     const base64 = canvas.toDataURL('image/jpeg', 0.8);
     setProductImageUrl(base64);
+    
+    // ปิดหน้ากล้องทันทีเพื่อให้เห็นแบบฟอร์มกรอกข้อมูล
+    setIsCapturingProduct(false);
+
     try {
       const res = await recognizeProduct(base64.split(',')[1]);
       setProductName(res.name);
@@ -84,7 +88,7 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onSave, onDel
     } catch(e) {
       speakText("ยายจ๋า อ่านไม่ออกเลย พิมพ์เองนะจ๊ะ", persona);
     } finally {
-      setIsProcessing(false); setIsCapturingProduct(false);
+      setIsProcessing(false);
     }
   };
 

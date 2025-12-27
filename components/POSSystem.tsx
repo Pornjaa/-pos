@@ -75,31 +75,37 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
 
   const handleScan = async () => {
     if (!videoRef.current || !canvasRef.current || isProcessing) return;
-    setIsProcessing(true);
+    setIsProcessing(true); // เปลี่ยนปุ่มเป็นตัวหมุนทันที
     try {
       const canvas = canvasRef.current;
       canvas.width = videoRef.current.videoWidth;
       canvas.height = videoRef.current.videoHeight;
       const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error();
+      if (!ctx) throw new Error("Canvas Error");
       ctx.drawImage(videoRef.current, 0, 0);
       const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+      
       const productNames = products.map(p => p.name);
       const result = await recognizeProduct(base64, productNames);
       const product = findBestMatch(result.name);
+      
+      // เมื่อได้ผลลัพธ์ ปิดหน้ากล้องทันทีเพื่อให้กลับมาหน้าหลัก
+      setIsScanning(false);
+      setIsProcessing(false);
+
       if (!product) {
         speakText(`ไม่รู้จักสินค้าตัวนี้เลย ต้องจดลงสมุดก่อนนะจ๊ะ`, persona);
         onUnregisteredProduct(result.name, '');
-        setIsScanning(false);
         return;
       }
-      // ไม่ต้องพูดตอนสแกน แต่รอพูดตอนใส่จำนวน
+      
+      // แสดงหน้าต่างใส่จำนวน
       setPendingProduct(product);
       setInputQty('1');
     } catch (err) {
-      speakText("มองไม่ชัดเลยจ้ะยาย", persona);
-    } finally {
+      speakText("มองไม่ชัดเลยจ้ะยาย ลองใหม่นะ", persona);
       setIsProcessing(false);
+      // ถ้าพลาด ยังให้หน้ากล้องเปิดอยู่เพื่อให้ยายลองใหม่ได้
     }
   };
 
@@ -109,7 +115,7 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
       if (existing) return prev.map(item => item.product.id === product.id ? { ...item, qty: item.qty + qty } : item);
       return [...prev, { product, qty }];
     });
-    // พูดยืนยันจำนวนที่หยิบใส่ตะกร้าจริง
+    // พูดยืนยันจำนวนที่หยิบใส่ตะกร้าจริง (ไม่ใช่พูด 1 ตลอดเวลา)
     speakText(`หยิบ ${product.name} จำนวน ${qty} ชิ้น ใส่ตะกร้าแล้วนะจ๊ะ`, persona);
   };
 
@@ -129,7 +135,7 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
     setCashReceived('');
     
     // พูดสรุปยอดเงินและเงินทอนให้ชัดเจน
-    speakText(`คิดเงินจบการขายเรียบร้อยจ้ะ ยอดรวม ${currentTotal} บาท รับมา ${currentReceived} บาท ทอนเงิน ${currentChange} บาทนะจ๊ะ`, persona);
+    speakText(`คิดเงินจบการขายเรียบร้อยจ้ะ ยอดรวม ${currentTotal} บาท รับมา ${currentReceived} บาท ทอนเงินให้ลูกค้า ${currentChange} บาทนะจ๊ะ`, persona);
   };
 
   const closeSummary = () => {
@@ -142,7 +148,7 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
       <div className="bg-white p-4 border-b border-gray-100 shadow-sm sticky top-0 z-20 flex flex-col gap-2 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <button onClick={() => { onGoBack(); }} className="p-2 -ml-2 text-gray-400"><ArrowLeft/></button>
+            <button onClick={onGoBack} className="p-2 -ml-2 text-gray-400"><ArrowLeft/></button>
             <ShoppingCart className="text-blue-600" size={20}/>
             <h3 className="text-base font-black text-gray-800">ตะกร้าของยาย</h3>
           </div>
@@ -164,66 +170,11 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
       {/* Main Actions */}
       <div className="flex-1 p-6 flex flex-col items-center justify-center gap-6">
         <div className="w-full space-y-4 max-w-sm">
-          <button onClick={() => { setIsScanning(true); }} className="w-full bg-blue-600 text-white py-12 rounded-[50px] font-black text-3xl flex flex-col items-center justify-center gap-4 shadow-[0_20px_40px_rgba(37,99,235,0.3)] active:scale-95 transition-all"><Camera size={64} /><span>สแกนสินค้า</span></button>
-          <button onClick={() => { setShowRetailSelector(true); }} className="w-full bg-orange-500 text-white py-8 rounded-[50px] font-black text-xl flex items-center justify-center gap-4 shadow-lg active:scale-95 transition-all"><ListFilter size={28} /> เลือกสินค้าขายย่อย</button>
+          <button onClick={() => setIsScanning(true)} className="w-full bg-blue-600 text-white py-12 rounded-[50px] font-black text-3xl flex flex-col items-center justify-center gap-4 shadow-[0_20px_40px_rgba(37,99,235,0.3)] active:scale-95 transition-all"><Camera size={64} /><span>สแกนสินค้า</span></button>
+          <button onClick={() => setShowRetailSelector(true)} className="w-full bg-orange-500 text-white py-8 rounded-[50px] font-black text-xl flex items-center justify-center gap-4 shadow-lg active:scale-95 transition-all"><ListFilter size={28} /> เลือกสินค้าขายย่อย</button>
           {cart.length > 0 && <button onClick={() => { setShowCheckout(true); speakText(`ยอดรวมทั้งหมด ${total} บาทจ้ะ`, persona); }} className="w-full bg-green-500 text-white py-8 rounded-[50px] font-black text-2xl flex items-center justify-center gap-4 shadow-xl active:scale-95 transition-all"><CheckCircle2 size={36} /> คิดเงินจบการขาย</button>}
         </div>
       </div>
-
-      {/* Retail Selector */}
-      {showRetailSelector && (
-        <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-md flex flex-col p-6 overflow-hidden">
-          <div className="bg-white w-full rounded-[50px] flex flex-col max-h-[80vh] overflow-hidden animate-in slide-in-from-bottom duration-300">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center"><div className="flex items-center gap-2"><Zap className="text-orange-500" fill="currentColor"/><h3 className="font-black text-xl text-gray-800">สินค้าขายย่อย</h3></div><button onClick={() => setShowRetailSelector(false)} className="bg-gray-100 p-2 rounded-full"><X/></button></div>
-            <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-3 no-scrollbar">
-              {retailProducts.length > 0 ? retailProducts.map(p => (
-                <button key={p.id} onClick={() => { addToCart(p, 1); setShowRetailSelector(false); }} className="bg-orange-50 border-2 border-orange-100 p-4 rounded-[30px] flex flex-col gap-1 active:scale-95 transition-all text-left">
-                  <p className="font-black text-orange-800 text-xs truncate">{p.name}</p>
-                  <p className="font-black text-orange-600 text-lg">฿{p.price}</p>
-                </button>
-              )) : (<div className="col-span-2 py-10 text-center text-gray-400 font-bold">ยังไม่ได้ตั้งค่าสินค้าขายย่อยจ้ะยาย</div>)}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Checkout Modal */}
-      {showCheckout && (
-        <div className="fixed inset-0 z-[2000] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6">
-          <div className="bg-white w-full max-w-sm rounded-[60px] p-8 space-y-8 shadow-2xl animate-in zoom-in duration-300">
-             <div className="text-center space-y-2">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">สรุปยอดขาย</p>
-                <h3 className="text-5xl font-black text-blue-600">฿{total.toLocaleString()}</h3>
-             </div>
-             
-             <div className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-gray-400 uppercase ml-6">รับเงินมา (บาท)</label>
-                  <input 
-                    type="number" 
-                    value={cashReceived} 
-                    onChange={e => setCashReceived(e.target.value)}
-                    className="w-full bg-gray-50 p-8 rounded-[40px] text-4xl font-black text-center border-4 border-transparent focus:border-green-500 outline-none transition-all"
-                    placeholder="0"
-                    autoFocus
-                  />
-                </div>
-
-                {cashNum >= total && (
-                  <div className="bg-green-50 p-6 rounded-[40px] border-2 border-green-100 flex justify-between items-center animate-in fade-in duration-500">
-                    <span className="text-xs font-black text-green-700 uppercase">เงินทอน</span>
-                    <span className="text-3xl font-black text-green-600">฿{change.toLocaleString()}</span>
-                  </div>
-                )}
-             </div>
-
-             <div className="space-y-3">
-               <button onClick={handleCompleteSale} className="w-full bg-green-500 text-white py-8 rounded-[40px] font-black text-2xl shadow-xl active:scale-95 transition-all">ยืนยันการขายจ้ะ</button>
-               <button onClick={() => { setShowCheckout(false); }} className="w-full text-gray-400 font-black text-xs">กลับไปแก้ไข</button>
-             </div>
-          </div>
-        </div>
-      )}
 
       {/* Sale Summary Receipt Modal */}
       {saleSummary && (
@@ -264,24 +215,41 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
       {/* Camera Scanning View */}
       {isScanning && (
         <div className="fixed inset-0 z-[2000] bg-black flex flex-col">
-          <div className="p-6 absolute top-0 left-0 right-0 z-[2010] flex justify-between items-center text-white"><button onClick={() => { setIsScanning(false); }} className="bg-white/20 p-4 rounded-full"><X size={32}/></button><div className="bg-blue-600 px-6 py-2 rounded-full font-black">฿{total}</div></div>
+          <div className="p-6 absolute top-0 left-0 right-0 z-[2010] flex justify-between items-center text-white">
+            <button onClick={() => setIsScanning(false)} className="bg-white/20 p-4 rounded-full"><X size={32}/></button>
+            <div className="bg-blue-600 px-6 py-2 rounded-full font-black">฿{total}</div>
+          </div>
           <video ref={videoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
-          <div className="absolute inset-0 flex items-center justify-center p-12 pointer-events-none"><div className="w-full aspect-square border-4 border-white/30 border-dashed rounded-[60px] shadow-[0_0_0_1000px_rgba(0,0,0,0.6)]"></div></div>
+          
+          <div className="absolute inset-0 flex items-center justify-center p-12 pointer-events-none">
+            <div className="w-full aspect-square border-4 border-white/30 border-dashed rounded-[60px] shadow-[0_0_0_1000px_rgba(0,0,0,0.6)]"></div>
+          </div>
+          
           <div className="absolute bottom-20 left-0 right-0 flex justify-center z-[2020]">
-            {isProcessing ? <Loader2 className="animate-spin text-white w-16 h-16" /> : 
-            <button onClick={handleScan} className="w-24 h-24 bg-white rounded-full flex items-center justify-center border-[10px] border-gray-100 shadow-[0_0_30px_rgba(255,255,255,0.3)] active:scale-90 transition-transform"><Camera size={48} className="text-blue-600" /></button>}
+            {isProcessing ? (
+              <div className="w-24 h-24 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border-[10px] border-white/30">
+                <Loader2 className="animate-spin text-white w-12 h-12" />
+              </div>
+            ) : (
+              <button 
+                onClick={handleScan} 
+                className="w-24 h-24 bg-white rounded-full flex items-center justify-center border-[10px] border-gray-100 shadow-[0_0_30px_rgba(255,255,255,0.3)] active:scale-90 transition-transform"
+              >
+                <Camera size={48} className="text-blue-600" />
+              </button>
+            )}
           </div>
           <canvas ref={canvasRef} className="hidden" />
         </div>
       )}
 
-      {/* Quantity Popup */}
+      {/* Quantity Popup - จะแสดงบนหน้าหลักหลังจากปิดกล้อง */}
       {pendingProduct && (
-        <div className="fixed inset-0 z-[3000] bg-black/95 flex items-center justify-center p-8">
+        <div className="fixed inset-0 z-[3000] bg-black/95 flex items-center justify-center p-8 backdrop-blur-sm">
           <div className="bg-white w-full max-w-xs rounded-[50px] p-8 space-y-6 text-center animate-in zoom-in duration-300">
             <p className="text-2xl font-black text-gray-800">{pendingProduct.name}</p>
             <div className="space-y-1">
-              <label className="text-[10px] font-black text-gray-400 uppercase">ระบุจำนวน</label>
+              <label className="text-[10px] font-black text-gray-400 uppercase">ระบุจำนวนที่ขาย</label>
               <input 
                 type="number" 
                 value={inputQty} 
@@ -291,7 +259,62 @@ const POSSystem: React.FC<POSSystemProps> = ({ products, onSaleComplete, onGoBac
               />
             </div>
             <button onClick={() => { addToCart(pendingProduct, parseInt(inputQty) || 1); setPendingProduct(null); }} className="w-full bg-blue-600 text-white py-7 rounded-3xl font-black text-2xl shadow-lg active:scale-95">ใส่ตะกร้าจ้ะ</button>
-            <button onClick={() => { setPendingProduct(null); }} className="w-full text-gray-400 font-black text-xs uppercase tracking-widest">ยกเลิก</button>
+            <button onClick={() => setPendingProduct(null)} className="w-full text-gray-400 font-black text-xs uppercase tracking-widest">ยกเลิก</button>
+          </div>
+        </div>
+      )}
+
+      {/* Checkout Modal */}
+      {showCheckout && (
+        <div className="fixed inset-0 z-[2000] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6">
+          <div className="bg-white w-full max-w-sm rounded-[60px] p-8 space-y-8 shadow-2xl animate-in zoom-in duration-300">
+             <div className="text-center space-y-2">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">สรุปยอดขาย</p>
+                <h3 className="text-5xl font-black text-blue-600">฿{total.toLocaleString()}</h3>
+             </div>
+             
+             <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-gray-400 uppercase ml-6">รับเงินมา (บาท)</label>
+                  <input 
+                    type="number" 
+                    value={cashReceived} 
+                    onChange={e => setCashReceived(e.target.value)}
+                    className="w-full bg-gray-50 p-8 rounded-[40px] text-4xl font-black text-center border-4 border-transparent focus:border-green-500 outline-none transition-all"
+                    placeholder="0"
+                    autoFocus
+                  />
+                </div>
+
+                {cashNum >= total && (
+                  <div className="bg-green-50 p-6 rounded-[40px] border-2 border-green-100 flex justify-between items-center animate-in fade-in duration-500">
+                    <span className="text-xs font-black text-green-700 uppercase">เงินทอน</span>
+                    <span className="text-3xl font-black text-green-600">฿{change.toLocaleString()}</span>
+                  </div>
+                )}
+             </div>
+
+             <div className="space-y-3">
+               <button onClick={handleCompleteSale} className="w-full bg-green-500 text-white py-8 rounded-[40px] font-black text-2xl shadow-xl active:scale-95 transition-all">ยืนยันการขายจ้ะ</button>
+               <button onClick={() => setShowCheckout(false)} className="w-full text-gray-400 font-black text-xs">กลับไปแก้ไข</button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Retail Selector */}
+      {showRetailSelector && (
+        <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-md flex flex-col p-6 overflow-hidden">
+          <div className="bg-white w-full rounded-[50px] flex flex-col max-h-[80vh] overflow-hidden animate-in slide-in-from-bottom duration-300">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center"><div className="flex items-center gap-2"><Zap className="text-orange-500" fill="currentColor"/><h3 className="font-black text-xl text-gray-800">สินค้าขายย่อย</h3></div><button onClick={() => setShowRetailSelector(false)} className="bg-gray-100 p-2 rounded-full"><X/></button></div>
+            <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-3 no-scrollbar">
+              {retailProducts.length > 0 ? retailProducts.map(p => (
+                <button key={p.id} onClick={() => { addToCart(p, 1); setShowRetailSelector(false); }} className="bg-orange-50 border-2 border-orange-100 p-4 rounded-[30px] flex flex-col gap-1 active:scale-95 transition-all text-left">
+                  <p className="font-black text-orange-800 text-xs truncate">{p.name}</p>
+                  <p className="font-black text-orange-600 text-lg">฿{p.price}</p>
+                </button>
+              )) : (<div className="col-span-2 py-10 text-center text-gray-400 font-bold">ยังไม่ได้ตั้งค่าสินค้าขายย่อยจ้ะยาย</div>)}
+            </div>
           </div>
         </div>
       )}
