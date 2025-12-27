@@ -2,7 +2,7 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Category, AiPersona } from "../types";
 
-// ใช้กุญแจจากระบบโดยตรง (Static Initialization)
+// ใช้กุญแจจากระบบโดยตรง (Static Initialization) เพื่อให้เชื่อมต่อได้ทันที
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
 let audioCtx: AudioContext | null = null;
@@ -39,7 +39,7 @@ async function decodePcmAudio(
   return buffer;
 }
 
-// ฟังก์ชันเตรียมระบบเสียง (ต้องเรียกตอน User Gesture)
+// ฟังก์ชันเตรียมระบบเสียง (ต้องเรียกตอน User Gesture เพื่อรองรับ Mobile Autoplay)
 export const initAudio = async () => {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
@@ -133,9 +133,16 @@ export const generateMascot = async () => {
       contents: { parts: [{ text: "A friendly Thai grandmother mascot, Pixar style, 3D, warm lighting" }] },
       config: { imageConfig: { aspectRatio: "1:1" } }
     });
-    const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-    if (part?.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
-    throw new Error();
+    
+    // Fix TS2532: ป้องกัน candidates หรือ content เป็น undefined
+    const candidates = response.candidates;
+    if (candidates && candidates.length > 0 && candidates[0].content) {
+      const part = candidates[0].content.parts.find(p => p.inlineData);
+      if (part && part.inlineData) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+      }
+    }
+    throw new Error("No image data");
   } catch (e) {
     throw new Error("วาดรูปไม่สำเร็จจ้ะ");
   }
@@ -160,16 +167,21 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
       },
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts.find(p => p.inlineData)?.inlineData?.data;
-    
-    if (base64Audio) {
-      const bytes = decodeBase64(base64Audio);
-      const audioBuffer = await decodePcmAudio(bytes, ctx, 24000, 1);
+    // Fix TS2532: ป้องกัน candidates หรือ content เป็น undefined ก่อนเข้าถึง parts
+    const candidates = response.candidates;
+    if (candidates && candidates.length > 0 && candidates[0].content) {
+      const part = candidates[0].content.parts.find(p => p.inlineData);
+      const base64Audio = part?.inlineData?.data;
       
-      const source = ctx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(ctx.destination);
-      source.start();
+      if (base64Audio) {
+        const bytes = decodeBase64(base64Audio);
+        const audioBuffer = await decodePcmAudio(bytes, ctx, 24000, 1);
+        
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(ctx.destination);
+        source.start();
+      }
     }
   } catch (e) {
     console.error("ยายจ๋า เสียงมีปัญหา:", e);
