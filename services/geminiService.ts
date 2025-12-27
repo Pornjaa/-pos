@@ -2,22 +2,28 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Category, AiPersona } from "../types";
 
-// ใช้กุญแจจากระบบ
+// ฟังก์ชันตรวจสอบเบื้องต้นว่า API KEY มีอยู่ไหม
+export const isApiKeyReady = () => {
+  return !!process.env.API_KEY && process.env.API_KEY.length > 10;
+};
+
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
 let audioCtx: AudioContext | null = null;
 
-// ฟังก์ชันถอดรหัส Base64
 function decodeBase64(base64: string) {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
+  try {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+  } catch (e) {
+    throw new Error("Base64 decoding failed");
   }
-  return bytes;
 }
 
-// ฟังก์ชันถอดรหัส Raw PCM
 async function decodePcmAudio(
   data: Uint8Array,
   ctx: AudioContext,
@@ -37,18 +43,15 @@ async function decodePcmAudio(
   return buffer;
 }
 
-// ฟังก์ชันเตรียมระบบเสียง + อุ่นเครื่อง (Warm-up)
 export const initAudio = async () => {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
   }
   
-  // สำคัญมากสำหรับมือถือ: ต้อง Resume ทุกครั้งที่มีการกดปุ่ม
   if (audioCtx.state === 'suspended') {
     await audioCtx.resume();
   }
   
-  // อุ่นเครื่องด้วยเสียงเงียบ
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   gain.gain.value = 0; 
@@ -58,6 +61,20 @@ export const initAudio = async () => {
   osc.stop(0.001);
   
   return audioCtx;
+};
+
+// ฟังก์ชันทดสอบการเชื่อมต่อกับ AI จริงๆ
+export const testAiConnection = async () => {
+  if (!isApiKeyReady()) return { ok: false, msg: "ไม่พบกุญแจ API ในระบบจ้ะ" };
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: "ตอบคำว่า OK สั้นๆ",
+    });
+    return { ok: !!response.text, msg: "เชื่อมต่อ AI สำเร็จแล้วจ้ะ!" };
+  } catch (e: any) {
+    return { ok: false, msg: e.message || "เชื่อมต่อไม่สำเร็จจ้ะ" };
+  }
 };
 
 export const processReceiptImage = async (base64Image: string) => {
@@ -144,7 +161,6 @@ export const generateMascot = async () => {
       config: { imageConfig: { aspectRatio: "1:1" } }
     });
     
-    // แก้ไข TS2532 แบบเด็ดขาด: ใช้ตัวแปรช่วยเช็คทีละขั้น
     if (response.candidates && response.candidates.length > 0) {
       const candidate = response.candidates[0];
       if (candidate.content && candidate.content.parts) {
@@ -179,7 +195,6 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
       },
     });
 
-    // แก้ไข TS2532 แบบเด็ดขาด: ตรวจสอบโครงสร้างข้อมูลก่อนใช้งาน
     if (response.candidates && response.candidates.length > 0) {
       const candidate = response.candidates[0];
       if (candidate.content && candidate.content.parts) {
@@ -194,10 +209,12 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
           source.buffer = audioBuffer;
           source.connect(ctx.destination);
           source.start();
+          return true; // สำเร็จ
         }
       }
     }
   } catch (e) {
     console.error("ยายจ๋า เสียงมีปัญหา:", e);
   }
+  return false;
 };

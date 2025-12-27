@@ -1,8 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Cloud, Save, Camera, User, Wand2, Heart, Star, Briefcase, Volume2, X } from 'lucide-react';
+import { Cloud, Save, Camera, User, Wand2, Heart, Star, Briefcase, Volume2, X, ShieldCheck, ShieldAlert, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { SyncConfig, AiPersona } from '../types';
-import { speakText } from '../services/geminiService';
+import { speakText, isApiKeyReady, testAiConnection, initAudio } from '../services/geminiService';
 
 interface SyncManagerProps {
   config: SyncConfig;
@@ -19,11 +19,32 @@ const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhot
   const [pin, setPin] = useState('');
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   
+  // สถานะการตรวจสอบ
+  const [apiStatus, setApiStatus] = useState<'IDLE' | 'LOADING' | 'OK' | 'ERROR'>('IDLE');
+  const [apiMsg, setApiMsg] = useState('');
+  const [testSoundStatus, setTestSoundStatus] = useState<'IDLE' | 'LOADING' | 'DONE'>('IDLE');
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const handleTestSound = () => {
-    speakText("เสียงดังฟังชัดไหมจ๊ะยาย ถ้าได้ยินแล้วแสดงว่าระบบเสียงพร้อมทำงานแล้วนะ", aiPersona);
+  const checkApi = async () => {
+    setApiStatus('LOADING');
+    const result = await testAiConnection();
+    if (result.ok) {
+      setApiStatus('OK');
+      setApiMsg(result.msg);
+    } else {
+      setApiStatus('ERROR');
+      setApiMsg(result.msg);
+    }
+  };
+
+  const handleTestSound = async () => {
+    setTestSoundStatus('LOADING');
+    await initAudio(); // ปลุกระบบเสียง
+    const success = await speakText("ระบบเสียงพร้อมทำงานแล้วนะจ๊ะยาย ได้ยินชัดเจนไหมจ๊ะ?", aiPersona);
+    setTestSoundStatus('DONE');
+    setTimeout(() => setTestSoundStatus('IDLE'), 3000);
   };
 
   const startCamera = async () => {
@@ -75,14 +96,45 @@ const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhot
           </div>
         </div>
 
-        {/* ปุ่มทดสอบเสียง */}
-        <div className="bg-gray-50 p-4 rounded-[35px] border-2 border-gray-100">
-           <button 
-             onClick={handleTestSound}
-             className="w-full bg-rose-50 text-rose-600 py-6 rounded-2xl text-sm font-black flex items-center justify-center gap-3 border border-rose-100 active:scale-95 transition-all shadow-sm"
-           >
-             <Volume2 size={24} /> ทดสอบเสียงยายดูจ้ะ
-           </button>
+        {/* --- Diagnostic Section --- */}
+        <div className="bg-gray-50 p-6 rounded-[35px] border-2 border-gray-100 space-y-4">
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">ตรวจสอบความพร้อมระบบ</p>
+          
+          <div className="flex gap-2">
+            {/* เช็ค API */}
+            <button 
+              onClick={checkApi}
+              disabled={apiStatus === 'LOADING'}
+              className={`flex-1 p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 ${
+                apiStatus === 'OK' ? 'bg-green-50 border-green-200' : 
+                apiStatus === 'ERROR' ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'
+              }`}
+            >
+              {apiStatus === 'LOADING' ? <Loader2 className="animate-spin text-blue-500" size={20}/> :
+               apiStatus === 'OK' ? <CheckCircle className="text-green-500" size={20}/> :
+               apiStatus === 'ERROR' ? <AlertCircle className="text-red-500" size={20}/> : <ShieldCheck className="text-gray-400" size={20}/>}
+              <span className="text-[10px] font-black uppercase tracking-tighter">เช็คกุญแจ AI</span>
+            </button>
+
+            {/* เช็คเสียง */}
+            <button 
+              onClick={handleTestSound}
+              disabled={testSoundStatus === 'LOADING'}
+              className={`flex-1 p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 ${
+                testSoundStatus === 'DONE' ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-100'
+              }`}
+            >
+              {testSoundStatus === 'LOADING' ? <Loader2 className="animate-spin text-blue-500" size={20}/> : 
+               <Volume2 className={testSoundStatus === 'DONE' ? 'text-blue-500' : 'text-gray-400'} size={20}/>}
+              <span className="text-[10px] font-black uppercase tracking-tighter">ทดสอบเสียง</span>
+            </button>
+          </div>
+          
+          {apiMsg && (
+            <div className={`p-3 rounded-xl text-center text-[10px] font-bold ${apiStatus === 'OK' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+              {apiMsg}
+            </div>
+          )}
         </div>
 
         {/* Persona Selection */}
@@ -115,7 +167,6 @@ const SyncManager: React.FC<SyncManagerProps> = ({ config, ownerPhoto, onSetPhot
 
       {isCameraOpen && (
         <div className="fixed inset-0 z-[250] bg-black flex flex-col">
-          {/* Fix: Icon 'X' now imported from lucide-react */}
           <div className="p-8 flex justify-between items-center text-white bg-black/40 absolute top-0 left-0 right-0 z-20"><button onClick={() => setIsCameraOpen(false)} className="p-4 bg-white/10 rounded-full backdrop-blur-md"><X size={32}/></button><span className="font-black text-xl uppercase tracking-widest">ถ่ายรูปคุณ</span><div className="w-14"></div></div>
           <video ref={videoRef} autoPlay playsInline className="flex-1 object-cover scale-x-[-1]" />
           <div className="p-12 flex justify-center bg-black"><button onClick={capturePhoto} className="w-28 h-28 bg-white rounded-full flex items-center justify-center border-[12px] border-gray-100 active:scale-90 transition-all"><Camera size={56} className="text-rose-600" /></button></div>
