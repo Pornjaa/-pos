@@ -2,7 +2,7 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Category, AiPersona } from "../types";
 
-// ใช้กุญแจจากระบบโดยตรง
+// ใช้กุญแจจากระบบ
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
 let audioCtx: AudioContext | null = null;
@@ -37,23 +37,25 @@ async function decodePcmAudio(
   return buffer;
 }
 
-// ฟังก์ชันเตรียมระบบเสียง + อุ่นเครื่อง (Warm-up) เพื่อให้มือถือยอมปล่อยเสียงออก
+// ฟังก์ชันเตรียมระบบเสียง + อุ่นเครื่อง (Warm-up)
 export const initAudio = async () => {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
   }
+  
+  // สำคัญมากสำหรับมือถือ: ต้อง Resume ทุกครั้งที่มีการกดปุ่ม
   if (audioCtx.state === 'suspended') {
     await audioCtx.resume();
   }
   
-  // เทคนิค "อุ่นเครื่อง": ปล่อยคลื่นเสียงเงียบสั้นๆ เพื่อปลดล็อค Audio บนมือถือ
+  // อุ่นเครื่องด้วยเสียงเงียบ
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   gain.gain.value = 0; 
   osc.connect(gain);
   gain.connect(audioCtx.destination);
   osc.start(0);
-  osc.stop(0.1);
+  osc.stop(0.001);
   
   return audioCtx;
 };
@@ -142,15 +144,15 @@ export const generateMascot = async () => {
       config: { imageConfig: { aspectRatio: "1:1" } }
     });
     
-    // แก้ TS2532: เช็คละเอียดก่อนเข้าถึงข้อมูล
-    const candidate = response.candidates && response.candidates[0];
-    const content = candidate && candidate.content;
-    const parts = content && content.parts;
-    
-    if (parts && parts.length > 0) {
-      const partWithImage = parts.find(p => p.inlineData);
-      if (partWithImage && partWithImage.inlineData && partWithImage.inlineData.data) {
-        return `data:image/png;base64,${partWithImage.inlineData.data}`;
+    // แก้ไข TS2532 แบบเด็ดขาด: ใช้ตัวแปรช่วยเช็คทีละขั้น
+    if (response.candidates && response.candidates.length > 0) {
+      const candidate = response.candidates[0];
+      if (candidate.content && candidate.content.parts) {
+        const parts = candidate.content.parts;
+        const partWithImage = parts.find(p => p.inlineData && p.inlineData.data);
+        if (partWithImage && partWithImage.inlineData && partWithImage.inlineData.data) {
+          return `data:image/png;base64,${partWithImage.inlineData.data}`;
+        }
       }
     }
     throw new Error("Image missing");
@@ -162,7 +164,6 @@ export const generateMascot = async () => {
 export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') => {
   if (!text.trim()) return;
 
-  // ปลุกระบบเสียงทันที (ต้องทำก่อนไป await อย่างอื่นนานๆ)
   const ctx = await initAudio();
 
   try {
@@ -178,22 +179,22 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
       },
     });
 
-    // แก้ TS2532: ตรวจสอบข้อมูลก่อนเล่นเสียง
-    const candidate = response.candidates && response.candidates[0];
-    const content = candidate && candidate.content;
-    const parts = content && content.parts;
-    
-    if (parts && parts.length > 0) {
-      const partWithAudio = parts.find(p => !!(p.inlineData && p.inlineData.data));
-      if (partWithAudio && partWithAudio.inlineData) {
-        const base64Audio = partWithAudio.inlineData.data;
-        const bytes = decodeBase64(base64Audio);
-        const audioBuffer = await decodePcmAudio(bytes, ctx, 24000, 1);
-        
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(ctx.destination);
-        source.start();
+    // แก้ไข TS2532 แบบเด็ดขาด: ตรวจสอบโครงสร้างข้อมูลก่อนใช้งาน
+    if (response.candidates && response.candidates.length > 0) {
+      const candidate = response.candidates[0];
+      if (candidate.content && candidate.content.parts) {
+        const parts = candidate.content.parts;
+        const partWithAudio = parts.find(p => p.inlineData && p.inlineData.data);
+        if (partWithAudio && partWithAudio.inlineData && partWithAudio.inlineData.data) {
+          const base64Audio = partWithAudio.inlineData.data;
+          const bytes = decodeBase64(base64Audio);
+          const audioBuffer = await decodePcmAudio(bytes, ctx, 24000, 1);
+          
+          const source = ctx.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(ctx.destination);
+          source.start();
+        }
       }
     }
   } catch (e) {
