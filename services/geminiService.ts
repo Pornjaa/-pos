@@ -2,11 +2,13 @@ import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Category, AiPersona } from "../types";
 
 export const isApiKeyReady = () => {
-  return !!process.env.API_KEY && process.env.API_KEY.length > 10;
+  const key = process.env.API_KEY;
+  return !!key && key.length > 10;
 };
 
-// Use fallback to avoid TS2322: Type 'string | undefined' is not assignable to type 'string'
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+// Ensure API_KEY is a string to satisfy TypeScript
+const apiKey = process.env.API_KEY || "";
+const ai = new GoogleGenAI({ apiKey });
 
 let audioCtx: AudioContext | null = null;
 
@@ -28,7 +30,6 @@ async function decodePcmAudio(
   sampleRate: number,
   numChannels: number,
 ): Promise<AudioBuffer> {
-  // 16-bit = 2 bytes per sample. Ensure we don't read past the end if data is misaligned.
   const validByteLength = data.byteLength - (data.byteLength % (2 * numChannels));
   const frameCount = validByteLength / (2 * numChannels);
   
@@ -38,11 +39,8 @@ async function decodePcmAudio(
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
     for (let i = 0; i < frameCount; i++) {
-      // Offset: (sample index * channels + current channel) * bytes per sample (2)
       const byteOffset = (i * numChannels + channel) * 2;
-      // Gemini TTS PCM is Little Endian (true)
       const sample = view.getInt16(byteOffset, true);
-      // Normalize Int16 (-32768 to 32767) to Float32 (-1.0 to 1.0)
       channelData[i] = sample / 32768.0;
     }
   }
@@ -53,7 +51,7 @@ export const initAudio = async () => {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
   }
-  if (audioCtx.state === 'suspended') {
+  if (audioCtx && audioCtx.state === 'suspended') {
     await audioCtx.resume();
   }
   return audioCtx;
@@ -187,11 +185,12 @@ export const generateMascot = async () => {
       },
     });
 
-    if (response.candidates?.[0]?.content?.parts) {
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          const base64EncodeString: string = part.inlineData.data;
-          return `data:image/png;base64,${base64EncodeString}`;
+    const candidate = response.candidates?.[0];
+    if (candidate?.content?.parts) {
+      for (const part of candidate.content.parts) {
+        if (part.inlineData?.data) {
+          const base64Data = part.inlineData.data;
+          return `data:image/png;base64,${base64Data}`;
         }
       }
     }
@@ -222,10 +221,12 @@ export const speakText = async (text: string, persona: AiPersona = 'GRANDMA') =>
       },
     });
     
-    if (response.candidates?.[0]?.content?.parts) {
-      const part = response.candidates[0].content.parts.find(p => p.inlineData?.data);
-      if (part?.inlineData?.data) {
-        const bytes = decodeBase64(part.inlineData.data);
+    const candidate = response.candidates?.[0];
+    if (candidate?.content?.parts) {
+      const part = candidate.content.parts.find(p => !!p.inlineData?.data);
+      const audioData = part?.inlineData?.data;
+      if (audioData) {
+        const bytes = decodeBase64(audioData);
         const audioBuffer = await decodePcmAudio(bytes, ctx, 24000, 1);
         
         const source = ctx.createBufferSource();
